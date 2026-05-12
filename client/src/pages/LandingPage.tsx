@@ -6,6 +6,7 @@ export default function LandingPage() {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showEnter, setShowEnter] = useState(false)
   const navigate = useNavigate()
 
   const handleEnter = async (e: React.FormEvent) => {
@@ -24,47 +25,147 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 max-w-lg mx-auto">
-      <div className="text-5xl mb-4">⏱</div>
-      <h1 className="text-2xl font-extrabold text-gray-800 mb-1">급여 계산기</h1>
-      <p className="text-sm text-gray-400 mb-10">출퇴근 기록부터 급여 명세서까지</p>
-
-      <form onSubmit={handleEnter} className="w-full mb-6">
-        <label className="text-xs font-semibold text-gray-500 mb-2 block">사업장 코드로 입장</label>
-        <div className="flex gap-2">
-          <input
-            value={code}
-            onChange={e => { setCode(e.target.value); setError('') }}
-            placeholder="예: abc123"
-            className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-          />
-          <button type="submit" disabled={loading}
-            className="bg-green-500 text-white font-bold px-5 py-3 rounded-xl hover:bg-green-600 transition disabled:opacity-50">
-            {loading ? '확인 중...' : '입장'}
-          </button>
+    <div className="min-h-screen bg-white">
+      {/* 헤더 */}
+      <header className="flex items-center justify-between px-6 py-4 max-w-4xl mx-auto">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">⏱</span>
+          <span className="font-extrabold text-gray-800 text-lg">알바계산기</span>
         </div>
-        {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-      </form>
+        <button
+          onClick={() => setShowEnter(v => !v)}
+          className="text-sm font-semibold text-gray-500 hover:text-gray-800 transition"
+        >
+          사업장 입장
+        </button>
+      </header>
 
-      <div className="flex items-center gap-3 w-full mb-6">
-        <div className="flex-1 border-t border-gray-200" />
-        <span className="text-xs text-gray-400">또는</span>
-        <div className="flex-1 border-t border-gray-200" />
-      </div>
+      {/* 사업장 코드 입력 */}
+      {showEnter && (
+        <div className="bg-gray-50 border-b border-gray-100 px-6 py-4">
+          <form onSubmit={handleEnter} className="max-w-sm mx-auto flex gap-2">
+            <input
+              value={code}
+              onChange={e => { setCode(e.target.value); setError('') }}
+              placeholder="사업장 코드 입력 (예: abc123)"
+              className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+            />
+            <button type="submit" disabled={loading}
+              className="bg-green-500 text-white font-bold px-4 py-2.5 rounded-xl hover:bg-green-600 transition disabled:opacity-50 text-sm">
+              {loading ? '확인 중...' : '입장'}
+            </button>
+          </form>
+          {error && <p className="text-red-500 text-xs mt-2 text-center">{error}</p>}
+        </div>
+      )}
 
-      <button
-        onClick={() => navigate('/create')}
-        className="w-full border-2 border-blue-600 text-blue-600 font-bold py-4 rounded-2xl text-base hover:bg-blue-50 transition"
-      >
-        + 새 사업장 등록하기
-      </button>
+      {/* 히어로 */}
+      <section className="text-center px-6 pt-16 pb-12 max-w-2xl mx-auto">
+        <div className="inline-block bg-green-50 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full mb-6">
+          무료로 시작하기
+        </div>
+        <h1 className="text-4xl font-extrabold text-gray-900 leading-tight mb-4">
+          알바 출퇴근 관리,<br />
+          <span className="text-green-500">이제 스마트하게</span>
+        </h1>
+        <p className="text-gray-500 text-base mb-8 leading-relaxed">
+          출퇴근 기록부터 급여 계산, 위치 기반 출근 체크까지<br />
+          사장님과 알바생 모두를 위한 근태 관리 서비스
+        </p>
+        <button
+          onClick={() => navigate('/create')}
+          className="bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200"
+        >
+          무료로 사업장 등록하기 →
+        </button>
+        <p className="text-xs text-gray-400 mt-3">신용카드 불필요 · 1분 만에 시작</p>
+      </section>
 
-      <button
-        onClick={() => navigate('/businesses')}
-        className="mt-4 text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition"
-      >
-        사업장 전체 목록 보기
-      </button>
+      {/* 미리보기 이미지 영역 */}
+      <section className="px-6 max-w-2xl mx-auto mb-16">
+        <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-3xl p-8 text-center">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <div className="text-2xl mb-2">🟢</div>
+              <div className="text-xs font-bold text-gray-700">출근 처리</div>
+              <div className="text-xs text-gray-400 mt-1">원터치</div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <div className="text-2xl mb-2">📊</div>
+              <div className="text-xs font-bold text-gray-700">급여 계산</div>
+              <div className="text-xs text-gray-400 mt-1">자동화</div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <div className="text-2xl mb-2">📍</div>
+              <div className="text-xs font-bold text-gray-700">위치 제한</div>
+              <div className="text-xs text-gray-400 mt-1">GPS 기반</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 기능 소개 */}
+      <section className="px-6 max-w-2xl mx-auto mb-16">
+        <h2 className="text-xl font-extrabold text-gray-800 text-center mb-8">필요한 기능, 전부 있어요</h2>
+        <div className="flex flex-col gap-4">
+          {[
+            { icon: '📱', title: '원터치 출퇴근', desc: '직원이 스마트폰으로 간편하게 출퇴근 체크. 관리자는 실시간으로 확인.' },
+            { icon: '📍', title: '위치 기반 출근 제한', desc: '사업장 반경 안에서만 출근 가능. GPS로 정확하게 확인.' },
+            { icon: '💰', title: '자동 급여 계산', desc: '시급 × 근무시간 자동 계산. 주휴수당도 옵션으로 적용.' },
+            { icon: '📄', title: '급여 명세서 출력', desc: '월별 근태 내역과 급여를 PDF로 출력해서 직원에게 전달.' },
+            { icon: '🔐', title: '사업장별 독립 관리', desc: '고유 코드로 사업장 구분. 직원 데이터 완전 분리.' },
+          ].map(f => (
+            <div key={f.title} className="flex items-start gap-4 bg-gray-50 rounded-2xl p-4">
+              <div className="text-2xl shrink-0">{f.icon}</div>
+              <div>
+                <div className="font-bold text-gray-800 text-sm">{f.title}</div>
+                <div className="text-xs text-gray-500 mt-0.5 leading-relaxed">{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 사용 방법 */}
+      <section className="bg-gray-50 px-6 py-12 mb-16">
+        <div className="max-w-2xl mx-auto">
+          <h2 className="text-xl font-extrabold text-gray-800 text-center mb-8">3단계로 시작하세요</h2>
+          <div className="flex flex-col gap-4">
+            {[
+              { step: '1', title: '사업장 등록', desc: '사업장 이름과 PIN을 설정하면 고유 코드가 발급됩니다.' },
+              { step: '2', title: '직원 추가', desc: '직원 이름과 시급을 입력하면 바로 사용 가능합니다.' },
+              { step: '3', title: '코드 공유', desc: '발급된 사업장 코드를 직원에게 알려주세요. 출퇴근 시작!' },
+            ].map(s => (
+              <div key={s.step} className="flex items-start gap-4">
+                <div className="w-8 h-8 rounded-full bg-green-500 text-white font-extrabold text-sm flex items-center justify-center shrink-0">
+                  {s.step}
+                </div>
+                <div>
+                  <div className="font-bold text-gray-800 text-sm">{s.title}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{s.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 하단 CTA */}
+      <section className="text-center px-6 pb-16 max-w-2xl mx-auto">
+        <h2 className="text-2xl font-extrabold text-gray-800 mb-3">지금 바로 시작해보세요</h2>
+        <p className="text-gray-500 text-sm mb-6">복잡한 설치 없이, 가입 즉시 사용 가능합니다</p>
+        <button
+          onClick={() => navigate('/create')}
+          className="bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200 w-full max-w-sm"
+        >
+          무료로 시작하기
+        </button>
+      </section>
+
+      {/* 푸터 */}
+      <footer className="border-t border-gray-100 px-6 py-6 text-center">
+        <p className="text-xs text-gray-400">⏱ 알바계산기 · 출퇴근 관리 서비스</p>
+      </footer>
     </div>
   )
 }
