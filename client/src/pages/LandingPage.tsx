@@ -59,8 +59,29 @@ export default function LandingPage() {
         </div>
       )}
 
+      {/* 공감 섹션 */}
+      <section className="px-6 pt-12 pb-10 max-w-2xl mx-auto">
+        <p className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">이런 경험 있으신가요?</p>
+        <div className="flex flex-col gap-3">
+          {[
+            { emoji: '😤', text: '"이번 달 알바 급여 계산하다가 또 실수했어..."' },
+            { emoji: '📝', text: '"카톡으로 출퇴근 보고받는데 나중에 분쟁이 생겼어요"' },
+            { emoji: '🤔', text: '"주휴수당을 줘야 하는지 말아야 하는지 매번 헷갈려"' },
+            { emoji: '📵', text: '"알바생이 제 시간에 출근했는지 확인할 방법이 없어"' },
+          ].map(item => (
+            <div key={item.emoji} className="flex items-center gap-3 bg-orange-50 rounded-2xl px-4 py-3">
+              <span className="text-xl shrink-0">{item.emoji}</span>
+              <span className="text-sm text-gray-600 font-medium">{item.text}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-center text-sm font-bold text-gray-700 mt-6">
+          알바계산기가 이 모든 걸 해결해드립니다.
+        </p>
+      </section>
+
       {/* 히어로 */}
-      <section className="text-center px-6 pt-16 pb-12 max-w-2xl mx-auto">
+      <section className="text-center px-6 pt-6 pb-12 max-w-2xl mx-auto">
         <div className="inline-block bg-green-50 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full mb-6">
           무료로 시작하기
         </div>
