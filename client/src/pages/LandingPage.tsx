@@ -2,11 +2,20 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchBusiness } from '../api'
 
+const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSc-j4HYY01OlGgFwTlGZHLuzpkP474N2cNdCQdLUnT4CyGr6w/viewform'
+const ADMIN_PASSWORD = 'alba2024'
+
 export default function LandingPage() {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showEnter, setShowEnter] = useState(false)
+
+  // 사업장 목록 비밀번호
+  const [showAdminModal, setShowAdminModal] = useState(false)
+  const [adminPw, setAdminPw] = useState('')
+  const [adminError, setAdminError] = useState('')
+
   const navigate = useNavigate()
 
   const handleEnter = async (e: React.FormEvent) => {
@@ -21,6 +30,17 @@ export default function LandingPage() {
       setError('존재하지 않는 사업장 코드입니다')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAdminEnter = () => {
+    if (adminPw === ADMIN_PASSWORD) {
+      setShowAdminModal(false)
+      setAdminPw('')
+      setAdminError('')
+      navigate('/businesses')
+    } else {
+      setAdminError('비밀번호가 올바르지 않습니다')
     }
   }
 
@@ -93,16 +113,18 @@ export default function LandingPage() {
           출퇴근 기록부터 급여 계산, 위치 기반 출근 체크까지<br />
           사장님과 알바생 모두를 위한 근태 관리 서비스
         </p>
-        <button
-          onClick={() => navigate('/create')}
-          className="bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200"
+        <a
+          href={FORM_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200"
         >
           무료로 사업장 등록하기 →
-        </button>
+        </a>
         <p className="text-xs text-gray-400 mt-3">신용카드 불필요 · 1분 만에 시작</p>
       </section>
 
-      {/* 미리보기 이미지 영역 */}
+      {/* 미리보기 */}
       <section className="px-6 max-w-2xl mx-auto mb-16">
         <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-3xl p-8 text-center">
           <div className="grid grid-cols-3 gap-4">
@@ -153,7 +175,7 @@ export default function LandingPage() {
           <h2 className="text-xl font-extrabold text-gray-800 text-center mb-8">3단계로 시작하세요</h2>
           <div className="flex flex-col gap-4">
             {[
-              { step: '1', title: '사업장 등록', desc: '사업장 이름과 PIN을 설정하면 고유 코드가 발급됩니다.' },
+              { step: '1', title: '사업장 등록 신청', desc: '아래 버튼으로 신청하면 빠르게 사업장 코드를 발급해드립니다.' },
               { step: '2', title: '직원 추가', desc: '직원 이름과 시급을 입력하면 바로 사용 가능합니다.' },
               { step: '3', title: '코드 공유', desc: '발급된 사업장 코드를 직원에게 알려주세요. 출퇴근 시작!' },
             ].map(s => (
@@ -174,25 +196,61 @@ export default function LandingPage() {
       {/* 하단 CTA */}
       <section className="text-center px-6 pb-16 max-w-2xl mx-auto">
         <h2 className="text-2xl font-extrabold text-gray-800 mb-3">지금 바로 시작해보세요</h2>
-        <p className="text-gray-500 text-sm mb-6">복잡한 설치 없이, 가입 즉시 사용 가능합니다</p>
-        <button
-          onClick={() => navigate('/create')}
-          className="bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200 w-full max-w-sm"
+        <p className="text-gray-500 text-sm mb-6">복잡한 설치 없이, 신청 즉시 사용 가능합니다</p>
+        <a
+          href={FORM_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200 w-full max-w-sm text-center"
         >
           무료로 시작하기
-        </button>
+        </a>
       </section>
 
       {/* 푸터 */}
       <footer className="border-t border-gray-100 px-6 py-6 text-center">
         <p className="text-xs text-gray-400 mb-2">⏱ 알바계산기 · 출퇴근 관리 서비스</p>
         <button
-          onClick={() => navigate('/businesses')}
+          onClick={() => { setShowAdminModal(true); setAdminPw(''); setAdminError('') }}
           className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition"
         >
           사업장 전체 목록
         </button>
       </footer>
+
+      {/* 관리자 비밀번호 모달 */}
+      {showAdminModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-6">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-extrabold text-gray-800 mb-1">관리자 확인</h3>
+            <p className="text-xs text-gray-400 mb-4">사업장 전체 목록은 관리자만 접근 가능합니다</p>
+            <input
+              type="password"
+              value={adminPw}
+              onChange={e => { setAdminPw(e.target.value); setAdminError('') }}
+              onKeyDown={e => e.key === 'Enter' && handleAdminEnter()}
+              placeholder="비밀번호 입력"
+              autoFocus
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 mb-2"
+            />
+            {adminError && <p className="text-red-500 text-xs mb-2">{adminError}</p>}
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => setShowAdminModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleAdminEnter}
+                className="flex-1 py-2.5 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600 transition"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
