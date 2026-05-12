@@ -185,7 +185,13 @@ export default function LandingPage() {
 
       {/* 푸터 */}
       <footer className="border-t border-gray-100 px-6 py-6 text-center">
-        <p className="text-xs text-gray-400">⏱ 알바계산기 · 출퇴근 관리 서비스</p>
+        <p className="text-xs text-gray-400 mb-2">⏱ 알바계산기 · 출퇴근 관리 서비스</p>
+        <button
+          onClick={() => navigate('/businesses')}
+          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition"
+        >
+          사업장 전체 목록
+        </button>
       </footer>
     </div>
   )
