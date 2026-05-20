@@ -84,10 +84,10 @@ export default function LandingPage() {
         <p className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">이런 경험 있으신가요?</p>
         <div className="flex flex-col gap-3">
           {[
-            { emoji: '😤', text: '"이번 달 알바 급여 계산하다가 또 실수했어..."' },
+            { emoji: '😤', text: '"이번 달 직원 급여 계산하다가 또 실수했어..."' },
             { emoji: '📝', text: '"카톡으로 출퇴근 보고받는데 나중에 분쟁이 생겼어요"' },
-            { emoji: '🤔', text: '"주휴수당을 줘야 하는지 말아야 하는지 매번 헷갈려"' },
-            { emoji: '📵', text: '"알바생이 제 시간에 출근했는지 확인할 방법이 없어"' },
+            { emoji: '🤔', text: '"단기 직원 주휴수당을 줘야 하는지 매번 헷갈려"' },
+            { emoji: '📵', text: '"직원이 제 시간에 출근했는지 확인할 방법이 없어"' },
           ].map(item => (
             <div key={item.emoji} className="flex items-center gap-3 bg-orange-50 rounded-2xl px-4 py-3">
               <span className="text-xl shrink-0">{item.emoji}</span>
@@ -106,12 +106,12 @@ export default function LandingPage() {
           무료로 시작하기
         </div>
         <h1 className="text-4xl font-extrabold text-gray-900 leading-tight mb-4">
-          알바 출퇴근 관리,<br />
+          직원 출퇴근 관리,<br />
           <span className="text-green-500">이제 스마트하게</span>
         </h1>
         <p className="text-gray-500 text-base mb-8 leading-relaxed">
           출퇴근 기록부터 급여 계산, 위치 기반 출근 체크까지<br />
-          사장님과 알바생 모두를 위한 근태 관리 서비스
+          <strong className="text-gray-700">단기·장기 직원</strong> 모두를 위한 근태 관리 서비스
         </p>
         <a
           href={FORM_URL}
@@ -152,6 +152,7 @@ export default function LandingPage() {
         <h2 className="text-xl font-extrabold text-gray-800 text-center mb-8">필요한 기능, 전부 있어요</h2>
         <div className="flex flex-col gap-4">
           {[
+            { icon: '👥', title: '단기·장기 직원 구분 관리', desc: '직원 유형별로 시급/주휴수당 자동 적용. 한 사업장에서 모두 관리.' },
             { icon: '📱', title: '원터치 출퇴근', desc: '직원이 스마트폰으로 간편하게 출퇴근 체크. 관리자는 실시간으로 확인.' },
             { icon: '📍', title: '위치 기반 출근 제한', desc: '사업장 반경 안에서만 출근 가능. GPS로 정확하게 확인.' },
             { icon: '💰', title: '자동 급여 계산', desc: '시급 × 근무시간 자동 계산. 주휴수당도 옵션으로 적용.' },
