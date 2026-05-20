@@ -50,7 +50,7 @@ export default function LandingPage() {
       <header className="flex items-center justify-between px-6 py-4 max-w-4xl mx-auto">
         <div className="flex items-center gap-2">
           <span className="text-2xl">⏱</span>
-          <span className="font-extrabold text-gray-800 text-lg">알바계산기</span>
+          <span className="font-extrabold text-gray-800 text-lg">퍼펙트 근태관리</span>
         </div>
         <button
           onClick={() => setShowEnter(v => !v)}
@@ -96,7 +96,7 @@ export default function LandingPage() {
           ))}
         </div>
         <p className="text-center text-sm font-bold text-gray-700 mt-6">
-          알바계산기가 이 모든 걸 해결해드립니다.
+          퍼펙트 근태관리가 이 모든 걸 해결해드립니다.
         </p>
       </section>
 
@@ -210,7 +210,7 @@ export default function LandingPage() {
 
       {/* 푸터 */}
       <footer className="border-t border-gray-100 px-6 py-6 text-center">
-        <p className="text-xs text-gray-400 mb-2">⏱ 알바계산기 · 출퇴근 관리 서비스</p>
+        <p className="text-xs text-gray-400 mb-2">⏱ 퍼펙트 근태관리 · 출퇴근 관리 서비스</p>
         <button
           onClick={() => { setShowAdminModal(true); setAdminPw(''); setAdminError('') }}
           className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition"
