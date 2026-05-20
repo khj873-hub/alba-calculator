@@ -20,7 +20,7 @@ export default function ManagerLayout() {
       <header className="bg-white border-b border-gray-100 px-4 py-4 sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-lg font-extrabold text-blue-600">🔐 관리자</span>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">급여 계산기</span>
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">퍼펙트 근태관리</span>
         </div>
         <div className="flex items-center gap-2">
           <button

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchPayroll, fetchEmployees, updateEmployee } from '../../api'
+import { fetchPayroll, fetchEmployees, updateEmployee, isPayEnabled } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getWeekKey } from '../../utils/pay'
 import type { PayrollEntry, Employee } from '../../types'
@@ -47,6 +47,68 @@ function getAdjusted(entry: PayrollEntry, breakEnabled: boolean, holidayEnabled:
 
   const basePay = Math.floor((totalMins / 60) * entry.hourly_rate)
   return { totalMins, basePay, holidayPay, totalPay: basePay + holidayPay, workDays }
+}
+
+function downloadPayslipCsv(
+  entry: PayrollEntry,
+  adj: AdjustedEntry,
+  year: number,
+  month: number,
+  holidayOn: boolean,
+  breakEnabled: boolean,
+  businessName: string,
+) {
+  const esc = (v: string | number) => {
+    const s = String(v ?? '')
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const row = (...cells: (string | number)[]) => cells.map(esc).join(',')
+  const issueDate = new Date().toLocaleDateString('ko-KR')
+  const net = Math.floor(adj.totalPay * 0.967)
+  const deduct = Math.floor(adj.totalPay * 0.033)
+
+  const lines: string[] = []
+  lines.push(row('급여 명세서'))
+  if (businessName) lines.push(row('사업자명', businessName))
+  lines.push(row('발급일', issueDate))
+  lines.push(row('직원명', entry.employee_name))
+  lines.push(row('귀속월', `${year}년 ${month}월`))
+  lines.push(row('시급(원)', entry.hourly_rate))
+  lines.push(row('휴게공제', breakEnabled ? '일 1시간 적용' : '미적용'))
+  lines.push(row('주휴수당', holidayOn ? 'ON' : 'OFF'))
+  lines.push('')
+  lines.push(row('지급 내역'))
+  lines.push(row('항목', '금액(원)'))
+  lines.push(row('기본급', adj.basePay))
+  lines.push(row('주휴수당', holidayOn ? adj.holidayPay : 0))
+  lines.push(row('합계', adj.totalPay))
+  lines.push(row('3.3% 공제', -deduct))
+  lines.push(row('실수령액', net))
+  lines.push('')
+  lines.push(row('근무 상세'))
+  lines.push(row('날짜', '출근', '퇴근', '근무시간(분)'))
+  for (const r of entry.records) {
+    lines.push(row(
+      r.clock_in.slice(0, 10),
+      r.clock_in.slice(11, 16),
+      r.clock_out?.slice(11, 16) ?? '-',
+      r.duration_minutes ?? 0,
+    ))
+  }
+  lines.push('')
+  lines.push(row('근무일수', adj.workDays))
+  lines.push(row('총 근무시간(분)', adj.totalMins))
+
+  const csv = '﻿' + lines.join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `급여명세_${entry.employee_name}_${year}년${String(month).padStart(2, '0')}월.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function openPayslip(
@@ -136,7 +198,7 @@ function openPayslip(
     </table>
   </div>
 
-  <div class="footer">급여 계산기에서 자동 생성된 명세서입니다.</div>
+  <div class="footer">퍼펙트 근태관리에서 자동 생성된 명세서입니다.</div>
   <script>window.onload = function(){ window.print(); }</script>
 </body>
 </html>`
@@ -236,10 +298,12 @@ export default function PayrollPage() {
     }
   }
 
-  const adjustedData = data.map(e => ({
-    entry: e,
-    adj: getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true),
-  }))
+  const adjustedData = data.map(e => {
+    const payOn = isPayEnabled(slug, e.employee_id)
+    const baseAdj = getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true)
+    const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, totalPay: 0 }
+    return { entry: e, adj, payOn }
+  })
   const totalPay = adjustedData.reduce((s, { adj }) => s + adj.totalPay, 0)
   const totalHolidayPay = adjustedData.reduce((s, { adj }) => s + adj.holidayPay, 0)
   const totalMins = adjustedData.reduce((s, { adj }) => s + adj.totalMins, 0)
@@ -315,30 +379,39 @@ export default function PayrollPage() {
         <div className="text-center py-16 text-gray-400 text-sm">이번 달 근무 기록이 없습니다</div>
       ) : (
         <div className="flex flex-col gap-3">
-          {adjustedData.map(({ entry, adj }) => {
+          {adjustedData.map(({ entry, adj, payOn }) => {
             const holidayOn = holidayMap[entry.employee_id] ?? true
             return (
-              <div key={entry.employee_id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div key={entry.employee_id} className={`rounded-2xl border shadow-sm p-4 ${payOn ? 'bg-white border-gray-100' : 'bg-gray-50 border-gray-200'}`}>
                 <div className="flex items-center gap-3 mb-3">
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center text-white font-extrabold text-lg shrink-0"
-                    style={{ background: entry.color }}
+                    style={{ background: entry.color, opacity: payOn ? 1 : 0.5 }}
                   >
                     {entry.employee_name[0]}
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold text-gray-800">{entry.employee_name}</div>
-                      <button
-                        onClick={() => toggleEmployeeHoliday(entry.employee_id)}
-                        className={`text-xs px-2 py-1 rounded-lg border font-semibold transition ${
-                          holidayOn
-                            ? 'bg-blue-50 border-blue-200 text-blue-600'
-                            : 'bg-gray-50 border-gray-200 text-gray-400'
-                        }`}
-                      >
-                        주휴수당 {holidayOn ? 'ON' : 'OFF'}
-                      </button>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="font-bold text-gray-800 truncate">{entry.employee_name}</div>
+                        {!payOn && (
+                          <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full font-semibold shrink-0">
+                            급여 미적용
+                          </span>
+                        )}
+                      </div>
+                      {payOn && (
+                        <button
+                          onClick={() => toggleEmployeeHoliday(entry.employee_id)}
+                          className={`text-xs px-2 py-1 rounded-lg border font-semibold transition shrink-0 ${
+                            holidayOn
+                              ? 'bg-blue-50 border-blue-200 text-blue-600'
+                              : 'bg-gray-50 border-gray-200 text-gray-400'
+                          }`}
+                        >
+                          주휴수당 {holidayOn ? 'ON' : 'OFF'}
+                        </button>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 mt-0.5">
                       {editRateId === entry.employee_id ? (
@@ -378,14 +451,22 @@ export default function PayrollPage() {
                       <div className="text-xs text-gray-400">(공제 후)</div>
                     )}
                   </div>
-                  <div className="bg-green-50 rounded-xl py-2 px-1">
-                    <div className="text-xs text-green-600 mb-0.5">예상 급여</div>
-                    <div className="font-extrabold text-green-700 text-sm">{adj.totalPay.toLocaleString()}원</div>
-                    <div className={`text-xs ${holidayOn && adj.holidayPay > 0 ? 'text-green-500' : 'text-gray-400'}`}>
-                      주휴수당 {holidayOn ? adj.holidayPay.toLocaleString() : 0}원
+                  {payOn ? (
+                    <div className="bg-green-50 rounded-xl py-2 px-1">
+                      <div className="text-xs text-green-600 mb-0.5">예상 급여</div>
+                      <div className="font-extrabold text-green-700 text-sm">{adj.totalPay.toLocaleString()}원</div>
+                      <div className={`text-xs ${holidayOn && adj.holidayPay > 0 ? 'text-green-500' : 'text-gray-400'}`}>
+                        주휴수당 {holidayOn ? adj.holidayPay.toLocaleString() : 0}원
+                      </div>
+                      <div className="text-xs text-green-600">3.3% 제외 ({Math.floor(adj.totalPay * 0.967).toLocaleString()}원)</div>
                     </div>
-                    <div className="text-xs text-green-600">3.3% 제외 ({Math.floor(adj.totalPay * 0.967).toLocaleString()}원)</div>
-                  </div>
+                  ) : (
+                    <div className="bg-gray-100 rounded-xl py-2 px-1 flex flex-col items-center justify-center">
+                      <div className="text-xs text-gray-400 mb-0.5">예상 급여</div>
+                      <div className="font-extrabold text-gray-400 text-sm">–</div>
+                      <div className="text-xs text-gray-400">계산 미적용</div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 일별 상세 펼치기 */}
@@ -403,12 +484,22 @@ export default function PayrollPage() {
                   </div>
                 </details>
 
-                <button
-                  onClick={() => openPayslip(entry, adj, year, month, holidayOn, breakTimeEnabled, businessName)}
-                  className="mt-3 w-full py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition"
-                >
-                  📄 급여 명세서 PDF 출력
-                </button>
+                {payOn && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <button
+                      onClick={() => openPayslip(entry, adj, year, month, holidayOn, breakTimeEnabled, businessName)}
+                      className="w-full py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition"
+                    >
+                      📄 급여 명세서 PDF 출력
+                    </button>
+                    <button
+                      onClick={() => downloadPayslipCsv(entry, adj, year, month, holidayOn, breakTimeEnabled, businessName)}
+                      className="w-full py-2 rounded-xl border border-green-200 text-xs font-semibold text-green-600 hover:bg-green-50 transition"
+                    >
+                      📊 엑셀(CSV) 다운로드
+                    </button>
+                  </div>
+                )}
               </div>
             )
           })}

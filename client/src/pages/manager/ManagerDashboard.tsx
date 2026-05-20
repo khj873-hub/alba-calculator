@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, setBusinessLocation, getStoredToken } from '../../api'
+import {
+  fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, setBusinessLocation, getStoredToken,
+  getOrCreateEmployeeToken, regenerateEmployeeToken, removeEmployeeToken, buildEmployeeLink,
+  removePayEnabled, getHomeMode, setHomeMode,
+} from '../../api'
+import type { HomeMode } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getCurrentPosition } from '../../utils/geo'
 import type { Employee, Business } from '../../types'
@@ -13,11 +18,18 @@ function formatElapsed(clockInStr: string) {
 }
 
 export default function ManagerDashboard() {
+  const navigate = useNavigate()
+  const slug = useSlug()
+
   const [employees, setEmployees] = useState<Employee[]>([])
   const [business, setBusiness] = useState<Business | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [, setTokenTick] = useState(0)
+  const [homeMode, setHomeModeState] = useState<HomeMode>(() => getHomeMode(slug))
+  const [showHomeModeForm, setShowHomeModeForm] = useState(false)
 
   // 위치 설정
   const [showLocationForm, setShowLocationForm] = useState(false)
@@ -26,9 +38,6 @@ export default function ManagerDashboard() {
   const [locationError, setLocationError] = useState('')
   const [locationSaving, setLocationSaving] = useState(false)
   const [locationStatus, setLocationStatus] = useState('')
-
-  const navigate = useNavigate()
-  const slug = useSlug()
 
   const load = useCallback(async () => {
     try {
@@ -55,8 +64,30 @@ export default function ManagerDashboard() {
 
   const handleDelete = async (emp: Employee) => {
     if (!confirm(`${emp.name} 직원을 삭제하시겠어요? 모든 근태 기록도 삭제됩니다.`)) return
-    try { await deleteEmployee(slug, emp.id); await load() }
+    try { await deleteEmployee(slug, emp.id); removeEmployeeToken(slug, emp.id); removePayEnabled(slug, emp.id); await load() }
     catch (e: any) { setError(e.message) }
+  }
+
+  const handleCopyLink = async (emp: Employee) => {
+    const link = buildEmployeeLink(slug, getOrCreateEmployeeToken(slug, emp.id))
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopiedId(emp.id)
+      setTimeout(() => setCopiedId(c => (c === emp.id ? null : c)), 1500)
+    } catch {
+      window.prompt('링크 복사가 차단됐어요. 직접 복사하세요:', link)
+    }
+  }
+
+  const handleRegenerate = (emp: Employee) => {
+    if (!confirm(`${emp.name}의 출근 링크를 새로 발급할까요? 기존 링크는 더 이상 작동하지 않습니다.`)) return
+    regenerateEmployeeToken(slug, emp.id)
+    setTokenTick(v => v + 1)
+  }
+
+  const handleSwitchHomeMode = (mode: HomeMode) => {
+    setHomeMode(slug, mode)
+    setHomeModeState(mode)
   }
 
   const handleSetLocation = async () => {
@@ -154,13 +185,78 @@ export default function ManagerDashboard() {
               >
                 {actionId === emp.id ? '처리 중...' : emp.is_working ? '퇴근 처리 🔴' : '출근 처리 🟢'}
               </button>
+
+              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
+                <button
+                  onClick={() => handleCopyLink(emp)}
+                  className="flex-1 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-2 transition"
+                  title={buildEmployeeLink(slug, getOrCreateEmployeeToken(slug, emp.id))}
+                >
+                  {copiedId === emp.id ? '✓ 복사 완료' : '🔗 출근 링크 복사'}
+                </button>
+                <button
+                  onClick={() => handleRegenerate(emp)}
+                  className="text-xs font-semibold text-gray-500 hover:text-red-500 bg-gray-50 hover:bg-red-50 rounded-lg px-3 py-2 transition"
+                  title="링크 재발급 (기존 링크 무효화)"
+                >
+                  🔄
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* 위치 설정 */}
+      {/* 홈 화면 모드 */}
       <div className="mt-8 border-t border-gray-100 pt-6">
+        <button
+          onClick={() => setShowHomeModeForm(v => !v)}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
+        >
+          <span>🏠 직원 홈 화면 모드</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${homeMode === 'kiosk' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+            {homeMode === 'kiosk' ? '키오스크' : '개인 링크'}
+          </span>
+          <span className="ml-auto">{showHomeModeForm ? '▲' : '▼'}</span>
+        </button>
+
+        {showHomeModeForm && (
+          <div className="mt-4 bg-gray-50 rounded-2xl p-4 flex flex-col gap-3">
+            <p className="text-xs text-gray-500">
+              사업장 홈 화면(<code className="text-[10px] bg-gray-200 px-1 rounded">/{slug}</code>) 진입 시 보일 화면을 선택하세요.
+            </p>
+            <button
+              onClick={() => handleSwitchHomeMode('kiosk')}
+              className={`text-left rounded-xl p-3 border-2 transition ${
+                homeMode === 'kiosk' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <div className="font-bold text-sm text-gray-800 mb-1">
+                {homeMode === 'kiosk' && '✓ '}🖥 키오스크 모드
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                직원 카드가 한 화면에 모두 노출됩니다. 매장 공용 단말 1대로 모든 직원이 출퇴근 찍는 경우.
+              </p>
+            </button>
+            <button
+              onClick={() => handleSwitchHomeMode('private')}
+              className={`text-left rounded-xl p-3 border-2 transition ${
+                homeMode === 'private' ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <div className="font-bold text-sm text-gray-800 mb-1">
+                {homeMode === 'private' && '✓ '}🔗 개인 링크 모드
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                직원별 고유 링크로만 본인 페이지 접근 가능. 각자 본인 휴대폰으로 출퇴근 찍는 경우. 위 직원 카드의 "🔗 출근 링크 복사"로 직원에게 전달.
+              </p>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 위치 설정 */}
+      <div className="mt-6 border-t border-gray-100 pt-6">
         <button
           onClick={() => { setShowLocationForm(v => !v); setLocationError(''); setLocationPin('') }}
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"

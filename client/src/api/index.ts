@@ -13,6 +13,73 @@ export function clearToken(slug: string) {
   sessionStorage.removeItem(`token_${slug}`)
 }
 
+// 직원 접근 토큰 매핑 (localStorage, 데모용 — 서버 미적용 단계)
+// 추후 서버 access_token 컬럼이 추가되면 fetchEmployees 응답을 그대로 사용한다
+type EmpTokenMap = Record<number, string>
+const EMP_TOKENS_KEY = (slug: string) => `emp_tokens_${slug}`
+
+function readEmpTokens(slug: string): EmpTokenMap {
+  try { return JSON.parse(localStorage.getItem(EMP_TOKENS_KEY(slug)) ?? '{}') }
+  catch { return {} }
+}
+function writeEmpTokens(slug: string, map: EmpTokenMap) {
+  localStorage.setItem(EMP_TOKENS_KEY(slug), JSON.stringify(map))
+}
+function randomToken(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+}
+
+export function getOrCreateEmployeeToken(slug: string, empId: number): string {
+  const map = readEmpTokens(slug)
+  if (!map[empId]) { map[empId] = randomToken(); writeEmpTokens(slug, map) }
+  return map[empId]
+}
+export function regenerateEmployeeToken(slug: string, empId: number): string {
+  const map = readEmpTokens(slug)
+  map[empId] = randomToken()
+  writeEmpTokens(slug, map)
+  return map[empId]
+}
+export function resolveEmployeeIdByToken(slug: string, token: string): number | null {
+  const map = readEmpTokens(slug)
+  for (const [id, t] of Object.entries(map)) if (t === token) return Number(id)
+  return null
+}
+export function removeEmployeeToken(slug: string, empId: number) {
+  const map = readEmpTokens(slug)
+  delete map[empId]
+  writeEmpTokens(slug, map)
+}
+export function buildEmployeeLink(slug: string, token: string): string {
+  return `${window.location.origin}/${slug}/e/${token}`
+}
+
+// 직원별 급여 계산 적용 ON/OFF (localStorage, 기본 ON)
+const PAY_ENABLED_KEY = (slug: string, empId: number) => `pay_enabled_${slug}_${empId}`
+export function isPayEnabled(slug: string, empId: number): boolean {
+  return localStorage.getItem(PAY_ENABLED_KEY(slug, empId)) !== 'false'
+}
+export function setPayEnabled(slug: string, empId: number, enabled: boolean) {
+  localStorage.setItem(PAY_ENABLED_KEY(slug, empId), String(enabled))
+}
+export function removePayEnabled(slug: string, empId: number) {
+  localStorage.removeItem(PAY_ENABLED_KEY(slug, empId))
+}
+
+// 사업장 홈 화면 모드 (localStorage, 기본 kiosk = 직원 카드 리스트)
+// 'kiosk' — 공용 단말 1대에서 직원 카드 노출, 누구나 본인 카드 클릭 가능 (기존 동작)
+// 'private' — 토큰 링크로만 본인 페이지 접근
+export type HomeMode = 'kiosk' | 'private'
+const HOME_MODE_KEY = (slug: string) => `home_mode_${slug}`
+export function getHomeMode(slug: string): HomeMode {
+  return (localStorage.getItem(HOME_MODE_KEY(slug)) as HomeMode) === 'private' ? 'private' : 'kiosk'
+}
+export function setHomeMode(slug: string, mode: HomeMode) {
+  localStorage.setItem(HOME_MODE_KEY(slug), mode)
+}
+
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {
   const method = options?.method?.toUpperCase() ?? 'GET'
   const needsContentType = method !== 'GET'
