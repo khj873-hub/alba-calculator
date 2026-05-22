@@ -42,7 +42,7 @@ export default function ManagerLayout() {
         <Outlet />
       </main>
 
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-white border-t border-gray-100 flex">
+      <nav className="fixed bottom-0 inset-x-0 mx-auto w-full max-w-lg bg-white border-t border-gray-100 flex">
         {nav.map((item) => (
           <NavLink
             key={item.to}
