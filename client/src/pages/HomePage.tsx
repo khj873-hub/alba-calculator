@@ -1,14 +1,21 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchEmployees, getHomeMode } from '../api'
+import { fetchEmployees, fetchBusiness } from '../api'
 import { useSlug } from '../hooks/useSlug'
 import type { Employee } from '../types'
 
 export default function HomePage() {
   const navigate = useNavigate()
   const slug = useSlug()
-  const mode = getHomeMode(slug)
+  const [mode, setMode] = useState<'kiosk' | 'private' | null>(null)
 
+  useEffect(() => {
+    fetchBusiness(slug)
+      .then(biz => setMode(biz.home_mode === 'private' ? 'private' : 'kiosk'))
+      .catch(() => setMode('kiosk'))
+  }, [slug])
+
+  if (mode === null) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
   if (mode === 'private') return <PrivateGuide slug={slug} navigate={navigate} />
   return <KioskList slug={slug} navigate={navigate} />
 }

@@ -1,3 +1,5 @@
+export type HomeMode = 'kiosk' | 'private'
+
 export interface Business {
   id: number
   slug: string
@@ -6,6 +8,7 @@ export interface Business {
   lat?: number | null
   lng?: number | null
   radius_meters?: number | null
+  home_mode?: HomeMode
 }
 
 export interface Employee {
@@ -13,6 +16,8 @@ export interface Employee {
   name: string
   hourly_rate: number
   color: string
+  access_token: string
+  pay_enabled: number
   created_at: string
   is_working: boolean
   clock_in: string | null

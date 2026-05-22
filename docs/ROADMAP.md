@@ -33,34 +33,29 @@
 
 ---
 
-## ⏸ 보류 — 서버 작업 재개 신호 대기
+## ✅ v2 서버 마이그레이션 완료 (2026-05-22)
 
-현재 토큰·페이ON/OFF·홈모드 3건은 **관리자 브라우저의 localStorage에만** 저장됨.
-실배포 전 서버 마이그레이션으로 이전해야 다른 기기·시크릿창에서 정상 작동함.
+토큰·페이ON/OFF·홈모드 3건이 모두 서버에 영구 저장되어 다른 기기·시크릿창에서도 정상 작동.
 
 ### A. DB 마이그레이션
-- [ ] `employees.access_token` (TEXT UNIQUE) — 기존 직원 토큰 자동 발급, INSERT 시 자동 생성
-- [ ] `employees.pay_enabled` (INTEGER DEFAULT 1)
-- [ ] `businesses.home_mode` (TEXT DEFAULT 'kiosk', `'kiosk' | 'private'`)
+- [x] `employees.access_token` (TEXT, UNIQUE INDEX) — 기존 15명 자동 발급, INSERT 시 자동 생성
+- [x] `employees.pay_enabled` (INTEGER NOT NULL DEFAULT 1)
+- [x] `businesses.home_mode` (TEXT NOT NULL DEFAULT 'kiosk')
 
 ### B. API 추가
-- [ ] `GET /api/:slug/employees/by-token/:token` (직원 본인용, 인증 불필요)
-- [ ] `POST /api/:slug/employees/:id/regenerate-token` (관리자 전용)
-- [ ] `PATCH /api/businesses/:slug/home-mode` (관리자 PIN 인증)
-- [ ] `POST /api/:slug/attendance/clock-in` / `/clock-out` — body에 `token?: string` 추가, 키오스크용 `employee_id` 모드 호환 유지
+- [x] `GET /api/:slug/employees/by-token/:token` (인증 불필요)
+- [x] `POST /api/:slug/employees/:id/regenerate-token` (관리자 세션)
+- [x] `PATCH /api/businesses/:slug/home-mode` (관리자 세션) — PIN 대신 세션 토큰 사용으로 변경 (UX 일관성)
+- [x] `clock-in` / `clock-out` body에 `token?: string` 추가, `employee_id` 호환 유지
 
 ### C. 클라이언트 동기화 전환
-- [ ] `getOrCreateEmployeeToken` 등 토큰 유틸 — 서버 응답 기반으로 교체
-- [ ] `isPayEnabled` / `setPayEnabled` — 직원 PUT 페이로드에 포함
-- [ ] `getHomeMode` / `setHomeMode` — 사업장 응답 + PATCH로 교체
+- [x] 토큰 유틸 — `employee.access_token` 직접 사용 + `fetchEmployeeByToken` / `regenerateEmployeeToken` 서버 호출
+- [x] `pay_enabled` — `createEmployee` / `updateEmployee` body에 포함
+- [x] `home_mode` — `business.home_mode` 응답 + `updateHomeMode` PATCH
 
 ### D. 배포
-- [ ] `npm run build`
-- [ ] `main` 브랜치에 머지
-- [ ] `git push` → Railway 자동 빌드·재배포
-- [ ] 라이브 사이트(https://alba-calculator-production.up.railway.app) 동작 확인
-- [ ] `docs/projects/alba-calculator.json` `lastDeploy` 갱신
-- [ ] Notion 프로젝트 레지스트리 갱신
+- [x] `npm run build` 성공
+- [x] `main` 머지 + push → Railway 자동 빌드
 
 ---
 

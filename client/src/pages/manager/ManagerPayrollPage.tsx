@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchPayroll, fetchEmployees, updateEmployee, isPayEnabled } from '../../api'
+import { fetchPayroll, fetchEmployees, updateEmployee } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getWeekKey } from '../../utils/pay'
 import type { PayrollEntry, Employee } from '../../types'
@@ -299,7 +299,7 @@ export default function PayrollPage() {
   }
 
   const adjustedData = data.map(e => {
-    const payOn = isPayEnabled(slug, e.employee_id)
+    const payOn = (employees.find(emp => emp.id === e.employee_id)?.pay_enabled ?? 1) === 1
     const baseAdj = getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true)
     const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, totalPay: 0 }
     return { entry: e, adj, payOn }

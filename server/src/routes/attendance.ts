@@ -57,43 +57,56 @@ function verifyEmployee(slug: string, employeeId: number): boolean {
   return !!result
 }
 
+function resolveEmployeeId(slug: string, employeeId?: number, token?: string): number | null {
+  if (token) {
+    const row = db.prepare(`
+      SELECT e.id FROM employees e
+      JOIN businesses b ON b.id = e.business_id
+      WHERE b.slug = ? AND e.access_token = ?
+    `).get(slug, token) as any
+    return row?.id ?? null
+  }
+  if (employeeId != null && verifyEmployee(slug, employeeId)) return employeeId
+  return null
+}
+
 export default async function attendanceRoutes(app: FastifyInstance) {
-  // 출근
-  app.post<{ Params: { slug: string }; Body: { employee_id: number; lat?: number; lng?: number } }>(
+  // 출근 (employee_id 또는 token 둘 중 하나)
+  app.post<{ Params: { slug: string }; Body: { employee_id?: number; token?: string; lat?: number; lng?: number } }>(
     '/api/:slug/attendance/clock-in', async (req, reply) => {
-      const { employee_id, lat, lng } = req.body
+      const { employee_id, token, lat, lng } = req.body
       const sessionToken = req.headers['x-session-token'] as string | undefined
       const locErr = checkLocation(req.params.slug, lat, lng, sessionToken)
       if (locErr) return reply.code(403).send({ error: locErr })
 
-      if (!verifyEmployee(req.params.slug, employee_id))
-        return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+      const empId = resolveEmployeeId(req.params.slug, employee_id, token)
+      if (!empId) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
 
       const already = db.prepare(
         'SELECT id FROM attendance WHERE employee_id = ? AND clock_out IS NULL'
-      ).get(employee_id)
+      ).get(empId)
       if (already) return reply.code(400).send({ error: '이미 출근 중입니다' })
 
       const now = nowKST()
-      const result = db.prepare('INSERT INTO attendance (employee_id, clock_in) VALUES (?, ?)').run(employee_id, now)
+      const result = db.prepare('INSERT INTO attendance (employee_id, clock_in) VALUES (?, ?)').run(empId, now)
       return db.prepare('SELECT * FROM attendance WHERE id = ?').get(result.lastInsertRowid)
     }
   )
 
-  // 퇴근
-  app.post<{ Params: { slug: string }; Body: { employee_id: number; lat?: number; lng?: number } }>(
+  // 퇴근 (employee_id 또는 token 둘 중 하나)
+  app.post<{ Params: { slug: string }; Body: { employee_id?: number; token?: string; lat?: number; lng?: number } }>(
     '/api/:slug/attendance/clock-out', async (req, reply) => {
-      const { employee_id, lat, lng } = req.body
+      const { employee_id, token, lat, lng } = req.body
       const sessionToken = req.headers['x-session-token'] as string | undefined
       const locErr = checkLocation(req.params.slug, lat, lng, sessionToken)
       if (locErr) return reply.code(403).send({ error: locErr })
 
-      if (!verifyEmployee(req.params.slug, employee_id))
-        return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+      const empId = resolveEmployeeId(req.params.slug, employee_id, token)
+      if (!empId) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
 
       const record = db.prepare(
         'SELECT * FROM attendance WHERE employee_id = ? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1'
-      ).get(employee_id) as any
+      ).get(empId) as any
       if (!record) return reply.code(400).send({ error: '출근 기록이 없습니다' })
 
       const now = nowKST()

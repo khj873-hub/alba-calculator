@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchEmployees, clockIn, clockOut, fetchAttendance, fetchBusiness, resolveEmployeeIdByToken, isPayEnabled, getHomeMode } from '../api'
+import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness } from '../api'
 import { useSlug } from '../hooks/useSlug'
 import { getCurrentPosition } from '../utils/geo'
 import { calcWeeklyHolidayPay } from '../utils/pay'
@@ -37,30 +37,37 @@ export default function PersonalPage() {
   const [acting, setActing] = useState(false)
   const [gpsLoading, setGpsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [mode, setMode] = useState<'kiosk' | 'private'>('kiosk')
   const [, setTick] = useState(0)
 
-  const mode = getHomeMode(slug)
-  // 토큰 우선 — 없을 땐 키오스크 모드에서만 id 직접 접근 허용 (private 모드에선 id 접근 차단)
-  const empId = token
-    ? resolveEmployeeIdByToken(slug, token)
-    : (id && mode === 'kiosk' ? Number(id) : null)
   const isKiosk = mode === 'kiosk' && !token
 
   const load = useCallback(async () => {
-    if (!empId) { setInvalid(true); setLoading(false); return }
-    const today = new Date()
-    const [emps, recs, biz] = await Promise.all([
-      fetchEmployees(slug),
-      fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, empId),
-      fetchBusiness(slug),
-    ])
-    const emp = emps.find((e) => e.id === empId)
-    if (!emp) { setInvalid(true); setLoading(false); return }
-    setEmployee(emp)
-    setRecords(recs)
-    setBusiness(biz)
-    setLoading(false)
-  }, [empId, slug])
+    try {
+      const biz = await fetchBusiness(slug)
+      const currentMode: 'kiosk' | 'private' = biz.home_mode === 'private' ? 'private' : 'kiosk'
+      setMode(currentMode)
+      setBusiness(biz)
+
+      let emp: Employee | null = null
+      if (token) {
+        emp = await fetchEmployeeByToken(slug, token).catch(() => null)
+      } else if (id && currentMode === 'kiosk') {
+        const emps = await fetchEmployees(slug)
+        emp = emps.find(e => e.id === Number(id)) ?? null
+      }
+      if (!emp) { setInvalid(true); setLoading(false); return }
+
+      const today = new Date()
+      const recs = await fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id)
+      setEmployee(emp)
+      setRecords(recs)
+    } catch {
+      setInvalid(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [slug, token, id])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -69,7 +76,7 @@ export default function PersonalPage() {
   }, [])
 
   const handleClock = async () => {
-    if (!employee || !empId || acting) return
+    if (!employee || acting) return
     setActing(true); setError('')
     try {
       let coords: { lat: number; lng: number } | undefined
@@ -78,8 +85,8 @@ export default function PersonalPage() {
         coords = await getCurrentPosition()
         setGpsLoading(false)
       }
-      if (employee.is_working) await clockOut(slug, empId, coords)
-      else await clockIn(slug, empId, coords)
+      if (employee.is_working) await clockOut(slug, employee.id, coords)
+      else await clockIn(slug, employee.id, coords)
       await load()
     } catch (e: any) { setError(e.message); setGpsLoading(false) }
     finally { setActing(false) }
@@ -109,7 +116,7 @@ export default function PersonalPage() {
   }
   if (!employee) return null
 
-  const payOn = isPayEnabled(slug, employee.id)
+  const payOn = employee.pay_enabled === 1
   const basePay = payOn ? Math.floor((totalMins / 60) * employee.hourly_rate) : 0
   const completedRecords = records
     .filter(r => r.clock_out)

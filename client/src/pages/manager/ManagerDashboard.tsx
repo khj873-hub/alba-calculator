@@ -2,13 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, setBusinessLocation, getStoredToken,
-  getOrCreateEmployeeToken, regenerateEmployeeToken, removeEmployeeToken, buildEmployeeLink,
-  removePayEnabled, getHomeMode, setHomeMode,
+  regenerateEmployeeToken, buildEmployeeLink, updateHomeMode,
 } from '../../api'
-import type { HomeMode } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getCurrentPosition } from '../../utils/geo'
-import type { Employee, Business } from '../../types'
+import type { Employee, Business, HomeMode } from '../../types'
 
 function formatElapsed(clockInStr: string) {
   const diff = Math.floor((Date.now() - new Date(clockInStr).getTime()) / 1000)
@@ -27,8 +25,8 @@ export default function ManagerDashboard() {
   const [actionId, setActionId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [copiedId, setCopiedId] = useState<number | null>(null)
-  const [, setTokenTick] = useState(0)
-  const [homeMode, setHomeModeState] = useState<HomeMode>(() => getHomeMode(slug))
+  const [homeMode, setHomeModeState] = useState<HomeMode>('kiosk')
+  const [homeModeSaving, setHomeModeSaving] = useState(false)
   const [showHomeModeForm, setShowHomeModeForm] = useState(false)
 
   // 위치 설정
@@ -44,6 +42,7 @@ export default function ManagerDashboard() {
       const [emps, biz] = await Promise.all([fetchEmployees(slug), fetchBusiness(slug)])
       setEmployees(emps)
       setBusiness(biz)
+      setHomeModeState(biz.home_mode === 'private' ? 'private' : 'kiosk')
       if (biz.radius_meters) setRadius(biz.radius_meters)
     } finally { setLoading(false) }
   }, [slug])
@@ -64,12 +63,12 @@ export default function ManagerDashboard() {
 
   const handleDelete = async (emp: Employee) => {
     if (!confirm(`${emp.name} 직원을 삭제하시겠어요? 모든 근태 기록도 삭제됩니다.`)) return
-    try { await deleteEmployee(slug, emp.id); removeEmployeeToken(slug, emp.id); removePayEnabled(slug, emp.id); await load() }
+    try { await deleteEmployee(slug, emp.id); await load() }
     catch (e: any) { setError(e.message) }
   }
 
   const handleCopyLink = async (emp: Employee) => {
-    const link = buildEmployeeLink(slug, getOrCreateEmployeeToken(slug, emp.id))
+    const link = buildEmployeeLink(slug, emp.access_token)
     try {
       await navigator.clipboard.writeText(link)
       setCopiedId(emp.id)
@@ -79,15 +78,22 @@ export default function ManagerDashboard() {
     }
   }
 
-  const handleRegenerate = (emp: Employee) => {
+  const handleRegenerate = async (emp: Employee) => {
     if (!confirm(`${emp.name}의 출근 링크를 새로 발급할까요? 기존 링크는 더 이상 작동하지 않습니다.`)) return
-    regenerateEmployeeToken(slug, emp.id)
-    setTokenTick(v => v + 1)
+    try {
+      await regenerateEmployeeToken(slug, emp.id)
+      await load()
+    } catch (e: any) { setError(e.message) }
   }
 
-  const handleSwitchHomeMode = (mode: HomeMode) => {
-    setHomeMode(slug, mode)
-    setHomeModeState(mode)
+  const handleSwitchHomeMode = async (mode: HomeMode) => {
+    if (mode === homeMode || homeModeSaving) return
+    setHomeModeSaving(true); setError('')
+    try {
+      await updateHomeMode(slug, mode)
+      setHomeModeState(mode)
+    } catch (e: any) { setError(e.message) }
+    finally { setHomeModeSaving(false) }
   }
 
   const handleSetLocation = async () => {
@@ -190,7 +196,7 @@ export default function ManagerDashboard() {
                 <button
                   onClick={() => handleCopyLink(emp)}
                   className="flex-1 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-2 transition"
-                  title={buildEmployeeLink(slug, getOrCreateEmployeeToken(slug, emp.id))}
+                  title={buildEmployeeLink(slug, emp.access_token)}
                 >
                   {copiedId === emp.id ? '✓ 복사 완료' : '🔗 출근 링크 복사'}
                 </button>

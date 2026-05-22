@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { fetchEmployees, createEmployee, updateEmployee, isPayEnabled, setPayEnabled } from '../../api'
+import { fetchEmployees, createEmployee, updateEmployee } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 
 const COLORS = [
@@ -27,7 +27,7 @@ export default function EmployeeFormPage() {
       const emp = list.find((e) => e.id === Number(id))
       if (emp) {
         setName(emp.name); setHourlyRate(emp.hourly_rate); setColor(emp.color)
-        setPayEnabledState(isPayEnabled(slug, emp.id))
+        setPayEnabledState(emp.pay_enabled === 1)
       }
     })
   }, [id, isEdit, slug])
@@ -38,11 +38,9 @@ export default function EmployeeFormPage() {
     setSaving(true); setError('')
     try {
       if (isEdit) {
-        await updateEmployee(slug, Number(id), { name, hourly_rate: hourlyRate, color })
-        setPayEnabled(slug, Number(id), payEnabled)
+        await updateEmployee(slug, Number(id), { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled })
       } else {
-        const created = await createEmployee(slug, { name, hourly_rate: hourlyRate, color })
-        setPayEnabled(slug, created.id, payEnabled)
+        await createEmployee(slug, { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled })
       }
       navigate(`/${slug}/manager`)
     } catch (e: any) { setError(e.message); setSaving(false) }
