@@ -1,4 +1,4 @@
-import type { Business, Employee, AttendanceRecord, PayrollEntry } from '../types'
+import type { Business, Employee, AttendanceRecord, PayrollEntry, HomeMode } from '../types'
 
 const BASE = '/api'
 
@@ -11,6 +11,11 @@ export function storeToken(slug: string, token: string) {
 }
 export function clearToken(slug: string) {
   sessionStorage.removeItem(`token_${slug}`)
+}
+
+// 직원 개인 출근 링크 (token은 employee.access_token에서 가져옴)
+export function buildEmployeeLink(slug: string, token: string): string {
+  return `${window.location.origin}/${slug}/e/${token}`
 }
 
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {
@@ -45,15 +50,27 @@ export const deleteBusiness = (slug: string, pin: string) =>
 export const changePin = (slug: string, body: { current_pin: string; new_pin: string }) =>
   req<{ ok: boolean }>(`/businesses/${slug}/pin`, { method: 'PATCH', body: JSON.stringify(body) })
 
+// 사업장 홈 화면 모드 (관리자 세션 인증)
+export const updateHomeMode = (slug: string, home_mode: HomeMode) =>
+  req<{ ok: boolean; home_mode: HomeMode }>(`/businesses/${slug}/home-mode`, {
+    method: 'PATCH', body: JSON.stringify({ home_mode })
+  }, getStoredToken(slug))
+
 // 직원 (읽기: 인증 불필요 / 쓰기: 관리자 인증 필요)
 export const fetchEmployees = (slug: string) =>
   req<Employee[]>(`/${slug}/employees`)
-export const createEmployee = (slug: string, body: { name: string; hourly_rate: number; color: string }) =>
+export const fetchEmployeeByToken = (slug: string, token: string) =>
+  req<Employee>(`/${slug}/employees/by-token/${token}`)
+export const createEmployee = (slug: string, body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean }) =>
   req<Employee>(`/${slug}/employees`, { method: 'POST', body: JSON.stringify(body) }, getStoredToken(slug))
-export const updateEmployee = (slug: string, id: number, body: { name: string; hourly_rate: number; color: string }) =>
+export const updateEmployee = (slug: string, id: number, body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean }) =>
   req<Employee>(`/${slug}/employees/${id}`, { method: 'PUT', body: JSON.stringify(body) }, getStoredToken(slug))
 export const deleteEmployee = (slug: string, id: number) =>
   req<{ ok: boolean }>(`/${slug}/employees/${id}`, { method: 'DELETE' }, getStoredToken(slug))
+export const regenerateEmployeeToken = (slug: string, id: number) =>
+  req<{ ok: boolean; access_token: string }>(`/${slug}/employees/${id}/regenerate-token`, {
+    method: 'POST', body: JSON.stringify({})
+  }, getStoredToken(slug))
 
 // 출퇴근 (관리자 세션 토큰 있으면 위치 우회)
 export const clockIn = (slug: string, employee_id: number, coords?: { lat: number; lng: number }, sessionToken?: string) =>

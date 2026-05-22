@@ -17,6 +17,7 @@ export default function EmployeeFormPage() {
   const [name, setName] = useState('')
   const [hourlyRate, setHourlyRate] = useState(9860)
   const [color, setColor] = useState(COLORS[0])
+  const [payEnabled, setPayEnabledState] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -24,7 +25,10 @@ export default function EmployeeFormPage() {
     if (!isEdit) return
     fetchEmployees(slug).then((list) => {
       const emp = list.find((e) => e.id === Number(id))
-      if (emp) { setName(emp.name); setHourlyRate(emp.hourly_rate); setColor(emp.color) }
+      if (emp) {
+        setName(emp.name); setHourlyRate(emp.hourly_rate); setColor(emp.color)
+        setPayEnabledState(emp.pay_enabled === 1)
+      }
     })
   }, [id, isEdit, slug])
 
@@ -33,8 +37,11 @@ export default function EmployeeFormPage() {
     if (!name.trim()) { setError('이름을 입력하세요'); return }
     setSaving(true); setError('')
     try {
-      if (isEdit) await updateEmployee(slug, Number(id), { name, hourly_rate: hourlyRate, color })
-      else await createEmployee(slug, { name, hourly_rate: hourlyRate, color })
+      if (isEdit) {
+        await updateEmployee(slug, Number(id), { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled })
+      } else {
+        await createEmployee(slug, { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled })
+      }
       navigate(`/${slug}/manager`)
     } catch (e: any) { setError(e.message); setSaving(false) }
   }
@@ -74,12 +81,40 @@ export default function EmployeeFormPage() {
         </div>
 
         <div>
-          <label className="text-sm font-semibold text-gray-600 mb-1.5 block">
-            시급 (원) *
-            <span className="text-xs text-gray-400 font-normal ml-2">2025 최저시급 9,860원</span>
-          </label>
-          <input type="number" value={hourlyRate} onChange={(e) => setHourlyRate(Number(e.target.value))} min={0}
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-semibold text-gray-600">
+              시급 (원) {payEnabled && '*'}
+              <span className="text-xs text-gray-400 font-normal ml-2">2025 최저시급 9,860원</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setPayEnabledState(v => !v)}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition ${
+                payEnabled ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+              }`}
+              aria-pressed={payEnabled}
+            >
+              <span className={`w-7 h-3.5 rounded-full relative transition-colors ${payEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}>
+                <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-all ${payEnabled ? 'left-4' : 'left-0.5'}`} />
+              </span>
+              급여계산 {payEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          <input
+            type="number"
+            value={hourlyRate}
+            onChange={(e) => setHourlyRate(Number(e.target.value))}
+            min={0}
+            disabled={!payEnabled}
+            className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+              payEnabled ? 'border-gray-200' : 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+            }`}
+          />
+          {!payEnabled && (
+            <p className="text-xs text-gray-400 mt-1.5">
+              💡 이 직원은 근태만 기록되고 급여는 계산되지 않습니다 (무급·봉사·견습 등)
+            </p>
+          )}
         </div>
 
         {error && <p className="text-red-500 text-sm">{error}</p>}

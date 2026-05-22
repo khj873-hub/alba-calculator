@@ -73,6 +73,22 @@ const migrate = db.transaction(() => {
       db.prepare('UPDATE businesses SET manager_pin = ? WHERE slug = ?').run(hashPin(b.manager_pin), b.slug)
     }
   }
+  // v2 마이그레이션: 직원 접근 토큰 + 급여 적용 ON/OFF + 홈 화면 모드
+  const empColsAfter = db.prepare('PRAGMA table_info(employees)').all() as any[]
+  if (empColsAfter.length > 0 && !empColsAfter.find((c: any) => c.name === 'access_token')) {
+    db.exec('ALTER TABLE employees ADD COLUMN access_token TEXT')
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_token ON employees(access_token)')
+    const existing = db.prepare('SELECT id FROM employees WHERE access_token IS NULL').all() as any[]
+    const upd = db.prepare('UPDATE employees SET access_token = ? WHERE id = ?')
+    for (const row of existing) upd.run(randomBytes(16).toString('hex'), row.id)
+  }
+  if (empColsAfter.length > 0 && !empColsAfter.find((c: any) => c.name === 'pay_enabled')) {
+    db.exec('ALTER TABLE employees ADD COLUMN pay_enabled INTEGER NOT NULL DEFAULT 1')
+  }
+  const bizColsAfter = db.prepare('PRAGMA table_info(businesses)').all() as any[]
+  if (!bizColsAfter.find((c: any) => c.name === 'home_mode')) {
+    db.exec("ALTER TABLE businesses ADD COLUMN home_mode TEXT NOT NULL DEFAULT 'kiosk'")
+  }
 })
 migrate()
 
@@ -84,6 +100,8 @@ db.exec(`
     name TEXT NOT NULL,
     hourly_rate INTEGER NOT NULL DEFAULT 9860,
     color TEXT NOT NULL DEFAULT '#3B82F6',
+    access_token TEXT,
+    pay_enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   );
 
@@ -99,4 +117,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_att_employee ON attendance(employee_id);
   CREATE INDEX IF NOT EXISTS idx_att_clock_in ON attendance(clock_in);
   CREATE INDEX IF NOT EXISTS idx_emp_business ON employees(business_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_token ON employees(access_token);
 `)
+
+// 토큰 헬퍼 (employees INSERT 시 사용)
+export function generateAccessToken(): string {
+  return randomBytes(16).toString('hex')
+}

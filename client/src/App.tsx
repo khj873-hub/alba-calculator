@@ -23,10 +23,11 @@ export default function App() {
           <Route path="/create" element={<CreateBusinessPage />} />
           <Route path="/businesses" element={<BusinessListPage />} />
 
-          {/* 직원 영역 */}
+          {/* 직원 영역 — 사업장 home_mode에 따라 키오스크/개인 링크 모드 */}
           <Route element={<EmployeeLayout />}>
             <Route path="/:slug" element={<HomePage />} />
             <Route path="/:slug/employee/:id" element={<PersonalPage />} />
+            <Route path="/:slug/e/:token" element={<PersonalPage />} />
           </Route>
 
           {/* 관리자 로그인 */}

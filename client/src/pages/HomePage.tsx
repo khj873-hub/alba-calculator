@@ -1,14 +1,49 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchEmployees } from '../api'
+import { fetchEmployees, fetchBusiness } from '../api'
 import { useSlug } from '../hooks/useSlug'
 import type { Employee } from '../types'
 
 export default function HomePage() {
-  const [employees, setEmployees] = useState<Employee[]>([])
-  const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
   const slug = useSlug()
+  const [mode, setMode] = useState<'kiosk' | 'private' | null>(null)
+
+  useEffect(() => {
+    fetchBusiness(slug)
+      .then(biz => setMode(biz.home_mode === 'private' ? 'private' : 'kiosk'))
+      .catch(() => setMode('kiosk'))
+  }, [slug])
+
+  if (mode === null) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
+  if (mode === 'private') return <PrivateGuide slug={slug} navigate={navigate} />
+  return <KioskList slug={slug} navigate={navigate} />
+}
+
+function PrivateGuide({ slug, navigate }: { slug: string; navigate: (to: string) => void }) {
+  return (
+    <div className="py-16 text-center">
+      <div className="text-6xl mb-6">🔗</div>
+      <h2 className="text-xl font-extrabold text-gray-800 mb-2">본인 출근 링크가 필요해요</h2>
+      <p className="text-sm text-gray-500 leading-relaxed mb-10">
+        관리자에게 본인 전용 출근 링크를 요청하세요.
+        <br />
+        받으신 링크로만 출퇴근 등록이 가능합니다.
+      </p>
+
+      <button
+        onClick={() => navigate(`/${slug}/manager/login`)}
+        className="text-sm text-gray-400 hover:text-gray-600 px-4 py-2 rounded-lg border border-gray-200 hover:border-gray-300 transition"
+      >
+        관리자로 로그인
+      </button>
+    </div>
+  )
+}
+
+function KioskList({ slug, navigate }: { slug: string; navigate: (to: string) => void }) {
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchEmployees(slug).then(setEmployees).finally(() => setLoading(false))

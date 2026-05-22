@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import { db, hashPin, verifyPinHash } from '../db'
+import { requireManagerAuth } from '../middleware/auth'
 
 function generateSlug(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -27,13 +28,13 @@ export default async function businessesRoutes(app: FastifyInstance) {
 
   // 전체 사업장 목록 (PIN 미포함)
   app.get('/api/businesses', async () => {
-    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters FROM businesses ORDER BY created_at DESC').all()
+    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode FROM businesses ORDER BY created_at DESC').all()
   })
 
   // 사업장 존재 확인 (PIN 미포함)
   app.get<{ Params: { slug: string } }>(
     '/api/businesses/:slug', async (req, reply) => {
-      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters FROM businesses WHERE slug = ?').get(req.params.slug)
+      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode FROM businesses WHERE slug = ?').get(req.params.slug)
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       return biz
     }
@@ -62,6 +63,19 @@ export default async function businessesRoutes(app: FastifyInstance) {
       db.prepare('UPDATE businesses SET lat=?, lng=?, radius_meters=? WHERE slug=?')
         .run(lat ?? null, lng ?? null, radius_meters ?? 300, req.params.slug)
       return { ok: true }
+    }
+  )
+
+  // 홈 화면 모드 변경 (관리자 세션 인증)
+  app.patch<{ Params: { slug: string }; Body: { home_mode: 'kiosk' | 'private' } }>(
+    '/api/businesses/:slug/home-mode', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const { home_mode } = req.body
+      if (home_mode !== 'kiosk' && home_mode !== 'private')
+        return reply.code(400).send({ error: 'home_mode는 kiosk 또는 private여야 합니다' })
+      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      db.prepare('UPDATE businesses SET home_mode = ? WHERE slug = ?').run(home_mode, req.params.slug)
+      return { ok: true, home_mode }
     }
   )
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchEmployees, clockIn, clockOut, fetchAttendance, fetchBusiness } from '../api'
+import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness } from '../api'
 import { useSlug } from '../hooks/useSlug'
 import { getCurrentPosition } from '../utils/geo'
 import { calcWeeklyHolidayPay } from '../utils/pay'
@@ -25,7 +25,7 @@ function formatElapsed(clockInStr: string) {
 }
 
 export default function PersonalPage() {
-  const { id } = useParams<{ id: string }>()
+  const { token, id } = useParams<{ token?: string; id?: string }>()
   const navigate = useNavigate()
   const slug = useSlug()
   const now = new Date()
@@ -33,27 +33,41 @@ export default function PersonalPage() {
   const [business, setBusiness] = useState<Business | null>(null)
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [invalid, setInvalid] = useState(false)
   const [acting, setActing] = useState(false)
   const [gpsLoading, setGpsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [mode, setMode] = useState<'kiosk' | 'private'>('kiosk')
   const [, setTick] = useState(0)
 
-  const empId = Number(id)
+  const isKiosk = mode === 'kiosk' && !token
 
   const load = useCallback(async () => {
-    const today = new Date()
-    const [emps, recs, biz] = await Promise.all([
-      fetchEmployees(slug),
-      fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, empId),
-      fetchBusiness(slug),
-    ])
-    const emp = emps.find((e) => e.id === empId)
-    if (!emp) { navigate(`/${slug}`); return }
-    setEmployee(emp)
-    setRecords(recs)
-    setBusiness(biz)
-    setLoading(false)
-  }, [empId, slug])
+    try {
+      const biz = await fetchBusiness(slug)
+      const currentMode: 'kiosk' | 'private' = biz.home_mode === 'private' ? 'private' : 'kiosk'
+      setMode(currentMode)
+      setBusiness(biz)
+
+      let emp: Employee | null = null
+      if (token) {
+        emp = await fetchEmployeeByToken(slug, token).catch(() => null)
+      } else if (id && currentMode === 'kiosk') {
+        const emps = await fetchEmployees(slug)
+        emp = emps.find(e => e.id === Number(id)) ?? null
+      }
+      if (!emp) { setInvalid(true); setLoading(false); return }
+
+      const today = new Date()
+      const recs = await fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id)
+      setEmployee(emp)
+      setRecords(recs)
+    } catch {
+      setInvalid(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [slug, token, id])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -71,8 +85,8 @@ export default function PersonalPage() {
         coords = await getCurrentPosition()
         setGpsLoading(false)
       }
-      if (employee.is_working) await clockOut(slug, empId, coords)
-      else await clockIn(slug, empId, coords)
+      if (employee.is_working) await clockOut(slug, employee.id, coords)
+      else await clockIn(slug, employee.id, coords)
       await load()
     } catch (e: any) { setError(e.message); setGpsLoading(false) }
     finally { setActing(false) }
@@ -81,18 +95,40 @@ export default function PersonalPage() {
   const totalMins = records.reduce((s, r) => s + (calcMins(r.clock_in, r.clock_out) ?? 0), 0)
 
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
+  if (invalid) {
+    const headline = mode === 'private' ? '유효하지 않은 링크예요' : '직원을 찾을 수 없어요'
+    const body = mode === 'private'
+      ? '이 출근 링크는 만료됐거나 잘못된 주소입니다.\n관리자에게 새 링크를 요청하세요.'
+      : '존재하지 않는 직원입니다. 다시 선택해 주세요.'
+    return (
+      <div className="py-16 text-center">
+        <div className="text-5xl mb-4">🚫</div>
+        <h2 className="text-lg font-extrabold text-gray-800 mb-2">{headline}</h2>
+        <p className="text-sm text-gray-500 mb-6 whitespace-pre-line">{body}</p>
+        <button
+          onClick={() => navigate(`/${slug}`)}
+          className="text-sm text-gray-400 hover:text-gray-600 px-4 py-2 rounded-lg border border-gray-200 hover:border-gray-300 transition"
+        >
+          홈으로
+        </button>
+      </div>
+    )
+  }
   if (!employee) return null
 
-  const basePay = Math.floor((totalMins / 60) * employee.hourly_rate)
+  const payOn = employee.pay_enabled === 1
+  const basePay = payOn ? Math.floor((totalMins / 60) * employee.hourly_rate) : 0
   const completedRecords = records
     .filter(r => r.clock_out)
     .map(r => ({ clock_in: r.clock_in, duration_minutes: calcMins(r.clock_in, r.clock_out) ?? 0 }))
-  const weeklyHolidayPay = calcWeeklyHolidayPay(completedRecords, employee.hourly_rate)
+  const weeklyHolidayPay = payOn ? calcWeeklyHolidayPay(completedRecords, employee.hourly_rate) : 0
   const totalPay = basePay + weeklyHolidayPay
 
   return (
     <div>
-      <button onClick={() => navigate(`/${slug}`)} className="text-gray-400 text-sm mb-6 block">← 돌아가기</button>
+      {isKiosk && (
+        <button onClick={() => navigate(`/${slug}`)} className="text-gray-400 text-sm mb-6 block">← 직원 선택으로</button>
+      )}
 
       <div className="flex items-center gap-4 mb-6">
         <div
@@ -103,7 +139,11 @@ export default function PersonalPage() {
         </div>
         <div>
           <div className="text-xl font-extrabold text-gray-800">{employee.name}</div>
-          <div className="text-sm text-gray-400">시급 {employee.hourly_rate.toLocaleString()}원</div>
+          <div className="text-sm text-gray-400">
+            {payOn
+              ? `시급 ${employee.hourly_rate.toLocaleString()}원`
+              : '급여 계산 미적용'}
+          </div>
         </div>
       </div>
 
@@ -155,14 +195,23 @@ export default function PersonalPage() {
             <div className="text-xs text-gray-400">총 시간</div>
           </div>
           <div>
-            <div className="text-lg font-extrabold text-green-600">{totalPay.toLocaleString()}원</div>
-            <div className="text-xs text-gray-400">예상 급여</div>
-            {weeklyHolidayPay > 0 && (
-              <div className="text-xs text-green-500">주휴 {weeklyHolidayPay.toLocaleString()}원 포함</div>
+            {payOn ? (
+              <>
+                <div className="text-lg font-extrabold text-green-600">{totalPay.toLocaleString()}원</div>
+                <div className="text-xs text-gray-400">예상 급여</div>
+                {weeklyHolidayPay > 0 && (
+                  <div className="text-xs text-green-500">주휴 {weeklyHolidayPay.toLocaleString()}원 포함</div>
+                )}
+                <div className="text-xs text-gray-400 mt-0.5">
+                  3.3% 제외 ({Math.floor(totalPay * 0.967).toLocaleString()}원)
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-lg font-extrabold text-gray-300">–</div>
+                <div className="text-xs text-gray-400">급여 미적용</div>
+              </>
             )}
-            <div className="text-xs text-gray-400 mt-0.5">
-              3.3% 제외 ({Math.floor(totalPay * 0.967).toLocaleString()}원)
-            </div>
           </div>
         </div>
       </div>
