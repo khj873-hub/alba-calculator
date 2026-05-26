@@ -16,6 +16,7 @@
 
 | 항목 | v2 확정안 | 변경 사유 |
 |---|---|---|
+| **마스터 사용 ON/OFF** | **사업장별 토글, 기본 OFF** | 연봉제 등 휴가 환산 불필요한 사업장 배려 (2026-05-26 추가) |
 | 유형 구분 | **4종** — 연차 · 무급휴가 · 병가 · 경조사 | v1 추천 그대로 채택 |
 | 단위 | **1일 + 반차(0.5일)** | v1 추천 그대로 채택 |
 | 유급 연차 1일 환산 | **사업장별 선택 가능** — `시급×8시간` / `평일 평균 근무시간` | 시급제·시급변동 사업장 모두 대응 |
@@ -66,20 +67,24 @@ CREATE TABLE time_off (
 CREATE INDEX idx_timeoff_emp_date ON time_off(employee_id, date);
 ```
 
-### businesses 신규 컬럼 2개
+### businesses 신규 컬럼 3개
 ```sql
+ALTER TABLE businesses ADD COLUMN time_off_enabled INTEGER NOT NULL DEFAULT 0;
+  -- 마스터 스위치 (기본 OFF). OFF면 UI에서 휴가 관련 섹션 숨김
+  -- payroll 응답에서 휴가 데이터 무시 (데이터는 보존)
 ALTER TABLE businesses ADD COLUMN leave_pay_calc_mode TEXT NOT NULL DEFAULT '8hours';
-  -- '8hours' | 'avg_workhours'
+  -- '8hours' | 'avg_workhours' (time_off_enabled=1일 때만 적용)
 ALTER TABLE businesses ADD COLUMN weekly_holiday_includes_leave INTEGER NOT NULL DEFAULT 1;
   -- 1: 주휴수당 계산 시 연차일도 주 15시간 카운트에 포함
   -- 0: 제외
+  -- time_off_enabled=0이면 자동 무력화
 ```
 
 ### 신규 API
 - `GET    /api/:slug/time-off?year&month[&employee_id]` — 월별 휴가 조회
 - `POST   /api/:slug/time-off` (관리자) — `{ employee_id, date, type, portion, half_period?, memo? }`
 - `DELETE /api/:slug/time-off/:id` (관리자) — 삭제
-- `PATCH  /api/businesses/:slug/leave-policy` (관리자 세션) — `{ leave_pay_calc_mode, weekly_holiday_includes_leave }`
+- `PATCH  /api/businesses/:slug/leave-policy` (관리자 세션) — `{ time_off_enabled?, leave_pay_calc_mode?, weekly_holiday_includes_leave? }`
 
 ### 기존 응답 확장
 - `GET /api/businesses/:slug` 응답에 `leave_pay_calc_mode`, `weekly_holiday_includes_leave` 포함

@@ -57,8 +57,8 @@ export const updateHomeMode = (slug: string, home_mode: HomeMode) =>
   }, getStoredToken(slug))
 
 // 사업장 휴가 정책 (관리자 세션 인증)
-export const updateLeavePolicy = (slug: string, body: { leave_pay_calc_mode?: LeavePayCalcMode; weekly_holiday_includes_leave?: boolean }) =>
-  req<{ ok: boolean; leave_pay_calc_mode: LeavePayCalcMode; weekly_holiday_includes_leave: number }>(
+export const updateLeavePolicy = (slug: string, body: { leave_pay_calc_mode?: LeavePayCalcMode; weekly_holiday_includes_leave?: boolean; time_off_enabled?: boolean }) =>
+  req<{ ok: boolean; leave_pay_calc_mode: LeavePayCalcMode; weekly_holiday_includes_leave: number; time_off_enabled: number }>(
     `/businesses/${slug}/leave-policy`,
     { method: 'PATCH', body: JSON.stringify(body) },
     getStoredToken(slug)

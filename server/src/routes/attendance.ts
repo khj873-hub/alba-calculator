@@ -147,12 +147,13 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const prefix = `${year}-${String(month).padStart(2, '0')}`
 
       const biz = db.prepare(
-        'SELECT leave_pay_calc_mode, weekly_holiday_includes_leave FROM businesses WHERE slug = ?'
+        'SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled FROM businesses WHERE slug = ?'
       ).get(slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
 
+      const timeOffEnabled: boolean = biz.time_off_enabled === 1
       const leaveMode: '8hours' | 'avg_workhours' = biz.leave_pay_calc_mode === 'avg_workhours' ? 'avg_workhours' : '8hours'
-      const includeLeaveInWeekly: boolean = biz.weekly_holiday_includes_leave === 1
+      const includeLeaveInWeekly: boolean = timeOffEnabled && biz.weekly_holiday_includes_leave === 1
 
       const records = db.prepare(`
         SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
@@ -163,12 +164,14 @@ export default async function attendanceRoutes(app: FastifyInstance) {
         ORDER BY e.id, a.clock_in
       `).all(slug, `${prefix}%`) as any[]
 
-      const timeOffRows = db.prepare(`
-        SELECT t.* FROM time_off t
-        JOIN employees e ON e.id = t.employee_id
-        JOIN businesses b ON b.id = e.business_id
-        WHERE b.slug = ? AND t.date LIKE ?
-      `).all(slug, `${prefix}%`) as any[]
+      const timeOffRows = timeOffEnabled
+        ? db.prepare(`
+            SELECT t.* FROM time_off t
+            JOIN employees e ON e.id = t.employee_id
+            JOIN businesses b ON b.id = e.business_id
+            WHERE b.slug = ? AND t.date LIKE ?
+          `).all(slug, `${prefix}%`) as any[]
+        : []
 
       const map = new Map<number, any>()
       for (const r of records) {

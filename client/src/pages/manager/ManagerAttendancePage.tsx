@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchEmployees, fetchAttendance, deleteAttendance, updateAttendance, fetchTimeOff, createTimeOff, deleteTimeOff } from '../../api'
+import { fetchEmployees, fetchAttendance, deleteAttendance, updateAttendance, fetchTimeOff, createTimeOff, deleteTimeOff, fetchBusiness } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import type { Employee, AttendanceRecord, TimeOffRecord, LeaveType, HalfPeriod } from '../../types'
 
@@ -146,6 +146,7 @@ export default function AttendancePage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [timeOffs, setTimeOffs] = useState<TimeOffRecord[]>([])
+  const [timeOffEnabled, setTimeOffEnabled] = useState<boolean>(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [editIn, setEditIn] = useState('')
   const [editOut, setEditOut] = useState('')
@@ -154,16 +155,16 @@ export default function AttendancePage() {
   const [showModal, setShowModal] = useState(false)
 
   useEffect(() => { fetchEmployees(slug).then(setEmployees) }, [slug])
+  useEffect(() => { fetchBusiness(slug).then(b => setTimeOffEnabled((b.time_off_enabled ?? 0) === 1)).catch(() => {}) }, [slug])
 
   const load = async () => {
-    const [recs, tos] = await Promise.all([
-      fetchAttendance(slug, year, month, empId || undefined),
-      fetchTimeOff(slug, year, month, empId || undefined),
-    ])
-    setRecords(recs)
-    setTimeOffs(tos)
+    const tasks: Promise<any>[] = [fetchAttendance(slug, year, month, empId || undefined)]
+    if (timeOffEnabled) tasks.push(fetchTimeOff(slug, year, month, empId || undefined))
+    const results = await Promise.all(tasks)
+    setRecords(results[0])
+    setTimeOffs(timeOffEnabled ? results[1] : [])
   }
-  useEffect(() => { load() }, [slug, year, month, empId])
+  useEffect(() => { load() }, [slug, year, month, empId, timeOffEnabled])
 
   const handleDelete = async (id: number) => {
     if (!confirm('이 기록을 삭제할까요?')) return
@@ -225,13 +226,15 @@ export default function AttendancePage() {
           <option value="">전체 직원</option>
           {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
-        <button
-          onClick={() => setShowModal(true)}
-          disabled={employees.length === 0}
-          className="bg-emerald-500 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-emerald-600 transition disabled:opacity-50 shrink-0"
-        >
-          🏖 휴가
-        </button>
+        {timeOffEnabled && (
+          <button
+            onClick={() => setShowModal(true)}
+            disabled={employees.length === 0}
+            className="bg-emerald-500 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-emerald-600 transition disabled:opacity-50 shrink-0"
+          >
+            🏖 휴가
+          </button>
+        )}
       </div>
 
       {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-4">{error}</div>}

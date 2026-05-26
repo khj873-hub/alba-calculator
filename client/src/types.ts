@@ -14,6 +14,7 @@ export interface Business {
   home_mode?: HomeMode
   leave_pay_calc_mode?: LeavePayCalcMode
   weekly_holiday_includes_leave?: number
+  time_off_enabled?: number
 }
 
 export interface TimeOffRecord {
