@@ -13,6 +13,7 @@ import ManagerAttendancePage from './pages/manager/ManagerAttendancePage'
 import ManagerPayrollPage from './pages/manager/ManagerPayrollPage'
 import EmployeeFormPage from './pages/manager/EmployeeFormPage'
 import AdminPage from './pages/AdminPage'
+import LegalPage from './pages/LegalPage'
 
 export default function App() {
   return (
@@ -26,6 +27,9 @@ export default function App() {
 
           {/* 운영자 콘솔 */}
           <Route path="/admin" element={<AdminPage />} />
+
+          {/* 법적 문서 */}
+          <Route path="/legal/:doc" element={<LegalPage />} />
 
           {/* 직원 영역 — 사업장 home_mode에 따라 키오스크/개인 링크 모드 */}
           <Route element={<EmployeeLayout />}>
