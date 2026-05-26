@@ -19,10 +19,10 @@ export function buildEmployeeLink(slug: string, token: string): string {
 }
 
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {
-  const method = options?.method?.toUpperCase() ?? 'GET'
-  const needsContentType = method !== 'GET'
+  // body가 있을 때만 Content-Type 지정 (Fastify는 body 없는데 Content-Type:json이면
+  // FST_ERR_CTP_EMPTY_JSON_BODY 400 반환 — DELETE without body가 여기 해당)
   const headers: Record<string, string> = {}
-  if (needsContentType) headers['Content-Type'] = 'application/json'
+  if (options?.body != null) headers['Content-Type'] = 'application/json'
   if (sessionToken) headers['x-session-token'] = sessionToken
 
   const res = await fetch(BASE + url, {
