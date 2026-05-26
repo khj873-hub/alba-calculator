@@ -160,6 +160,9 @@ export default function AttendancePage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [confirmAttendanceId, setConfirmAttendanceId] = useState<number | null>(null)
+  const [confirmTimeOffId, setConfirmTimeOffId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null) // "att-{id}" or "to-{id}"
 
   useEffect(() => { fetchEmployees(slug).then(setEmployees) }, [slug])
 
@@ -174,15 +177,35 @@ export default function AttendancePage() {
   useEffect(() => { load() }, [slug, year, month, empId])
 
   const handleDelete = async (id: number) => {
-    if (!confirm('이 기록을 삭제할까요?')) return
-    try { await deleteAttendance(slug, id); await load() }
-    catch (e: any) { setError(e.message) }
+    if (confirmAttendanceId !== id) {
+      setConfirmAttendanceId(id); setConfirmTimeOffId(null); setError('')
+      return
+    }
+    setDeletingId(`att-${id}`); setConfirmAttendanceId(null); setError('')
+    try {
+      await deleteAttendance(slug, id)
+      setRecords(prev => prev.filter(r => r.id !== id))  // 즉시 UI 반영
+      await load()
+    } catch (e: any) {
+      setError(`근태 삭제 실패: ${e.message}`)
+      alert(`근태 삭제 실패: ${e.message}`)
+    } finally { setDeletingId(null) }
   }
 
   const handleDeleteTimeOff = async (id: number) => {
-    if (!confirm('이 휴가 기록을 삭제할까요?')) return
-    try { await deleteTimeOff(slug, id); await load() }
-    catch (e: any) { setError(e.message) }
+    if (confirmTimeOffId !== id) {
+      setConfirmTimeOffId(id); setConfirmAttendanceId(null); setError('')
+      return
+    }
+    setDeletingId(`to-${id}`); setConfirmTimeOffId(null); setError('')
+    try {
+      await deleteTimeOff(slug, id)
+      setTimeOffs(prev => prev.filter(t => t.id !== id))  // 즉시 UI 반영
+      await load()
+    } catch (e: any) {
+      setError(`휴가 삭제 실패: ${e.message}`)
+      alert(`휴가 삭제 실패: ${e.message}`)
+    } finally { setDeletingId(null) }
   }
 
   const startEdit = (r: AttendanceRecord) => {
@@ -310,10 +333,15 @@ export default function AttendancePage() {
                         </div>
                         <button
                           onClick={() => handleDeleteTimeOff(t.id)}
+                          disabled={deletingId === `to-${t.id}`}
                           aria-label="휴가 삭제"
-                          className="shrink-0 text-base text-gray-500 hover:text-red-500 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition"
+                          className={`shrink-0 text-xs font-bold border rounded-lg px-2.5 py-1.5 transition disabled:opacity-50 ${
+                            confirmTimeOffId === t.id
+                              ? 'bg-red-500 text-white border-red-500 hover:bg-red-600 animate-pulse'
+                              : 'bg-white text-gray-500 border-gray-200 hover:text-red-500 hover:bg-red-50 hover:border-red-300'
+                          }`}
                         >
-                          🗑
+                          {deletingId === `to-${t.id}` ? '⏳' : confirmTimeOffId === t.id ? '삭제 확정' : '🗑'}
                         </button>
                       </div>
                     )
@@ -382,10 +410,15 @@ export default function AttendancePage() {
                               {isLastSeg && (
                                 <button
                                   onClick={() => handleDelete(r.id)}
+                                  disabled={deletingId === `att-${r.id}`}
                                   aria-label="근태 삭제"
-                                  className="text-base text-gray-500 hover:text-red-500 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition"
+                                  className={`text-xs font-bold border rounded-lg px-2.5 py-1.5 transition disabled:opacity-50 ${
+                                    confirmAttendanceId === r.id
+                                      ? 'bg-red-500 text-white border-red-500 hover:bg-red-600 animate-pulse'
+                                      : 'bg-white text-gray-500 border-gray-200 hover:text-red-500 hover:bg-red-50 hover:border-red-300'
+                                  }`}
                                 >
-                                  🗑
+                                  {deletingId === `att-${r.id}` ? '⏳' : confirmAttendanceId === r.id ? '삭제 확정' : '🗑'}
                                 </button>
                               )}
                             </div>
