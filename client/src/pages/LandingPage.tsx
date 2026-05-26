@@ -195,14 +195,19 @@ export default function LandingPage() {
       </section>
 
       {/* 푸터 */}
-      <footer className="border-t border-gray-100 px-6 py-6 text-center">
-        <p className="text-xs text-gray-400 mb-2">⏱ 퍼펙트 근태관리 · 출퇴근 관리 서비스</p>
-        <button
-          onClick={() => navigate('/admin')}
-          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition"
-        >
-          운영자 콘솔
-        </button>
+      <footer className="border-t border-gray-100 px-6 py-8 max-w-3xl mx-auto">
+        <p className="text-xs text-gray-400 text-center mb-3">⏱ 퍼펙트 근태관리 · 출퇴근 관리 서비스</p>
+        <div className="flex items-center justify-center gap-4 text-xs text-gray-400 mb-3">
+          <button onClick={() => navigate('/legal/terms')} className="hover:text-gray-700 underline underline-offset-2 transition">이용약관</button>
+          <span className="text-gray-200">|</span>
+          <button onClick={() => navigate('/legal/privacy')} className="hover:text-gray-700 underline underline-offset-2 transition font-bold">개인정보처리방침</button>
+          <span className="text-gray-200">|</span>
+          <button onClick={() => navigate('/admin')} className="hover:text-gray-700 underline underline-offset-2 transition">운영자 콘솔</button>
+        </div>
+        <p className="text-[11px] text-gray-400 text-center leading-relaxed">
+          주식회사 지누소프트 · 대표 김한중 · 사업자등록번호 716-87-01425<br/>
+          경기도 성남시 분당구 운중로 124 804호 · khj873@jinusoft.com · 0505-170-3258
+        </p>
       </footer>
     </div>
   )
