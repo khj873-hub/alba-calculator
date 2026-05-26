@@ -3,18 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { fetchBusiness } from '../api'
 
 const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfqabZynjYejxaNUbJoCAL1LmBFZh5a1lCF4WudjaNvFEtVkg/viewform'
-const ADMIN_PASSWORD = 'alba2024'
 
 export default function LandingPage() {
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showEnter, setShowEnter] = useState(false)
-
-  // 사업장 목록 비밀번호
-  const [showAdminModal, setShowAdminModal] = useState(false)
-  const [adminPw, setAdminPw] = useState('')
-  const [adminError, setAdminError] = useState('')
 
   const navigate = useNavigate()
 
@@ -30,17 +24,6 @@ export default function LandingPage() {
       setError('존재하지 않는 사업장 코드입니다')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleAdminEnter = () => {
-    if (adminPw === ADMIN_PASSWORD) {
-      setShowAdminModal(false)
-      setAdminPw('')
-      setAdminError('')
-      navigate('/businesses')
-    } else {
-      setAdminError('비밀번호가 올바르지 않습니다')
     }
   }
 
@@ -88,6 +71,7 @@ export default function LandingPage() {
             { emoji: '📝', text: '"카톡으로 출퇴근 보고받는데 나중에 분쟁이 생겼어요"' },
             { emoji: '🤔', text: '"단기 직원 주휴수당을 줘야 하는지 매번 헷갈려"' },
             { emoji: '📵', text: '"직원이 제 시간에 출근했는지 확인할 방법이 없어"' },
+            { emoji: '🏖', text: '"직원이 연차 썼는데 급여에 반영 안 돼서 분쟁 났어요"' },
           ].map(item => (
             <div key={item.emoji} className="flex items-center gap-3 bg-orange-50 rounded-2xl px-4 py-3">
               <span className="text-xl shrink-0">{item.emoji}</span>
@@ -126,23 +110,22 @@ export default function LandingPage() {
 
       {/* 미리보기 */}
       <section className="px-6 max-w-2xl mx-auto mb-16">
-        <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-3xl p-8 text-center">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <div className="text-2xl mb-2">🟢</div>
-              <div className="text-xs font-bold text-gray-700">출근 처리</div>
-              <div className="text-xs text-gray-400 mt-1">원터치</div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <div className="text-2xl mb-2">📊</div>
-              <div className="text-xs font-bold text-gray-700">급여 계산</div>
-              <div className="text-xs text-gray-400 mt-1">자동화</div>
-            </div>
-            <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <div className="text-2xl mb-2">📍</div>
-              <div className="text-xs font-bold text-gray-700">위치 제한</div>
-              <div className="text-xs text-gray-400 mt-1">GPS 기반</div>
-            </div>
+        <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-3xl p-6 sm:p-8 text-center">
+          <div className="grid grid-cols-3 gap-3 sm:gap-4">
+            {[
+              { icon: '🟢', label: '출근 처리', desc: '원터치' },
+              { icon: '📊', label: '급여 계산', desc: '자동화' },
+              { icon: '📍', label: '위치 제한', desc: 'GPS 기반' },
+              { icon: '🏖', label: '휴가 관리', desc: '4종 분류' },
+              { icon: '📄', label: '명세서', desc: 'PDF/CSV' },
+              { icon: '🔐', label: '구글 로그인', desc: '안전 접근' },
+            ].map(item => (
+              <div key={item.label} className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm">
+                <div className="text-2xl mb-1.5">{item.icon}</div>
+                <div className="text-xs font-bold text-gray-700">{item.label}</div>
+                <div className="text-xs text-gray-400 mt-1">{item.desc}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -156,8 +139,11 @@ export default function LandingPage() {
             { icon: '📱', title: '원터치 출퇴근', desc: '직원이 스마트폰으로 간편하게 출퇴근 체크. 관리자는 실시간으로 확인.' },
             { icon: '📍', title: '위치 기반 출근 제한', desc: '사업장 반경 안에서만 출근 가능. GPS로 정확하게 확인.' },
             { icon: '💰', title: '자동 급여 계산', desc: '시급 × 근무시간 자동 계산. 주휴수당도 옵션으로 적용.' },
-            { icon: '📄', title: '급여 명세서 출력', desc: '월별 근태 내역과 급여를 PDF로 출력해서 직원에게 전달.' },
-            { icon: '🔐', title: '사업장별 독립 관리', desc: '고유 코드로 사업장 구분. 직원 데이터 완전 분리.' },
+            { icon: '🏖', title: '휴가 관리 (4종)', desc: '연차·반차·병가·경조사 등록. 급여에 자동 반영하거나 기록만 남길지 선택.' },
+            { icon: '🌙', title: '야간 근무 자정 분할', desc: '22시→다음날 06시 같은 야간 근무를 자동으로 일자별 분리. 명세서에도 정확히 표시.' },
+            { icon: '📄', title: '급여 명세서 출력', desc: '월별 근태 내역과 급여를 PDF/CSV로 출력해서 직원에게 전달.' },
+            { icon: '🔐', title: '구글 로그인', desc: '사장님 본인 구글 계정으로 안전하게 접근. PIN 분실 걱정 없음. (PIN도 병행 가능)' },
+            { icon: '🏪', title: '사업장별 독립 관리', desc: '고유 코드로 사업장 구분. 직원·근태·급여 데이터 완전 분리.' },
           ].map(f => (
             <div key={f.title} className="flex items-start gap-4 bg-gray-50 rounded-2xl p-4">
               <div className="text-2xl shrink-0">{f.icon}</div>
@@ -197,7 +183,7 @@ export default function LandingPage() {
       {/* 하단 CTA */}
       <section className="text-center px-6 pb-16 max-w-2xl mx-auto">
         <h2 className="text-2xl font-extrabold text-gray-800 mb-3">지금 바로 시작해보세요</h2>
-        <p className="text-gray-500 text-sm mb-6">복잡한 설치 없이, 신청 즉시 사용 가능합니다</p>
+        <p className="text-gray-500 text-sm mb-6">복잡한 설치 없이, 신청 후 1~2일 내 시작 가능합니다</p>
         <a
           href={FORM_URL}
           target="_blank"
@@ -212,46 +198,12 @@ export default function LandingPage() {
       <footer className="border-t border-gray-100 px-6 py-6 text-center">
         <p className="text-xs text-gray-400 mb-2">⏱ 퍼펙트 근태관리 · 출퇴근 관리 서비스</p>
         <button
-          onClick={() => { setShowAdminModal(true); setAdminPw(''); setAdminError('') }}
+          onClick={() => navigate('/admin')}
           className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition"
         >
-          사업장 전체 목록
+          운영자 콘솔
         </button>
       </footer>
-
-      {/* 관리자 비밀번호 모달 */}
-      {showAdminModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-6">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-            <h3 className="font-extrabold text-gray-800 mb-1">관리자 확인</h3>
-            <p className="text-xs text-gray-400 mb-4">사업장 전체 목록은 관리자만 접근 가능합니다</p>
-            <input
-              type="password"
-              value={adminPw}
-              onChange={e => { setAdminPw(e.target.value); setAdminError('') }}
-              onKeyDown={e => e.key === 'Enter' && handleAdminEnter()}
-              placeholder="비밀번호 입력"
-              autoFocus
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 mb-2"
-            />
-            {adminError && <p className="text-red-500 text-xs mb-2">{adminError}</p>}
-            <div className="flex gap-2 mt-2">
-              <button
-                onClick={() => setShowAdminModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleAdminEnter}
-                className="flex-1 py-2.5 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600 transition"
-              >
-                확인
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
