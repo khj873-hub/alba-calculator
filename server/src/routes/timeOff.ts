@@ -56,7 +56,7 @@ export default async function timeOffRoutes(app: FastifyInstance) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return reply.code(400).send({ error: '날짜 형식은 YYYY-MM-DD 입니다' })
 
       const finalPortion = portion === 0.5 ? 0.5 : 1.0
-      const finalHalf = finalPortion === 0.5 ? (half_period === 'pm' ? 'pm' : 'am') : null
+      const finalHalf: 'am' | 'pm' | 'full' = finalPortion === 0.5 ? (half_period === 'pm' ? 'pm' : 'am') : 'full'
 
       if (!verifyEmployeeInBusiness(req.params.slug, employee_id))
         return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })

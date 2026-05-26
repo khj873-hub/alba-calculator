@@ -230,10 +230,11 @@ export default async function attendanceRoutes(app: FastifyInstance) {
           if (leaveMode === '8hours') {
             paid_leave_pay = Math.floor(e.paid_leave_days * 8 * e.hourly_rate)
           } else {
-            // 평일 평균: 해당 직원의 그달 출근일(unique date) 기준 평균 분
+            // 평일 평균: 해당 직원의 그달 출근일(unique date) 기준 평균 분.
+            // 출근일이 없거나 누적 분이 0이면 8시간 기본값으로 fallback.
             const dateSet = new Set<string>(e.records.map((r: any) => r.clock_in.slice(0, 10)))
             const workDays = dateSet.size
-            const avgMins = workDays > 0 ? e.total_minutes / workDays : 8 * 60
+            const avgMins = workDays > 0 && e.total_minutes > 0 ? e.total_minutes / workDays : 8 * 60
             paid_leave_pay = Math.floor((avgMins / 60) * e.hourly_rate * e.paid_leave_days)
           }
         }

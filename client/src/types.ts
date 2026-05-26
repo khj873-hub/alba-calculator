@@ -1,7 +1,7 @@
 export type HomeMode = 'kiosk' | 'private'
 export type LeavePayCalcMode = '8hours' | 'avg_workhours'
 export type LeaveType = 'annual' | 'unpaid' | 'sick' | 'family'
-export type HalfPeriod = 'am' | 'pm'
+export type HalfPeriod = 'am' | 'pm' | 'full'
 
 export interface Business {
   id: number
@@ -25,7 +25,7 @@ export interface TimeOffRecord {
   date: string
   type: LeaveType
   portion: number
-  half_period: HalfPeriod | null
+  half_period: HalfPeriod
   memo: string | null
   created_at: string
 }

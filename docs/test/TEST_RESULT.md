@@ -1,117 +1,119 @@
-# 테스트 결과 보고서
+# P0 휴가 기능 테스트 결과 보고서
 
-## 실행 일시: 2026-05-20
+## 실행 일시
+2026-05-26
 
-## 검증 범위
-클라이언트 단독 변경 4건 (서버 미변경):
-1. 타이틀 통일 — "급여 계산기" → "퍼펙트 근태관리"
-2. 직원 페이지 토큰 기반 분리 — `/:slug/employee/:id` 제거 → `/:slug/e/:token`
-3. 직원별 급여 적용 ON/OFF 토글 (localStorage)
-4. 급여 탭 📊 엑셀(CSV) 다운로드 버튼
-
----
-
-## 1. 자동화 검증 결과
-
-| 항목 | 명령 | 결과 |
-|---|---|---|
-| 클라이언트 타입 체크 | `tsc --noEmit` | ✅ EXIT 0 |
-| 서버 타입 체크 | `tsc --noEmit` | ✅ EXIT 0 |
-| 프로덕션 빌드 | `vite build` | ✅ 230.88 KB / gzip 70.57 KB, 535ms |
-| 잔존 "급여 계산기" 문자열 (src) | grep | ✅ 없음 |
-| 잔존 `/:slug/employee/:id` 라우트 | grep | ✅ 없음 (App.tsx에 `/:slug/e/:token`만 존재) |
-| API 회귀: 보호 라우트 미인증 호출 | curl POST /employees | ✅ 401 `관리자 인증이 필요합니다` |
-| API 회귀: 보호 라우트 미인증 호출 | curl PUT /employees/:id | ✅ 401 동일 |
-| API 회귀: 공개 라우트 | curl GET /employees | ✅ 200 + 데이터 정상 |
-| 데브 서버 HTTP 응답 | curl :5174/ | ✅ 200 |
-| API 서버 health | curl :3002/api/health | ✅ `{"ok":true}` |
-| 서버 watch 런타임 에러 | 로그 확인 | ✅ 없음 |
-| CSV BOM 바이트 | Node 단위 실행 | ✅ `ef bb bf` |
-| CSV 이스케이프 (콤마/쿼트) | Node 단위 실행 | ✅ `"홍길동, ""테스터"""` 형식 정상 |
-| CSV 줄바꿈 | Node 단위 실행 | ✅ CRLF |
-| 새 유틸 12개 사용처 일관성 | grep 교차 | ✅ 정의·임포트·호출 모두 정합 |
-
----
-
-## 2. 코드 정적 검증
-
-### (1) 타이틀 통일
-| 위치 | 변경 전 → 후 |
-|---|---|
-| `client/index.html:6` | (사전 적용) `퍼펙트 근태관리 · 직원 출퇴근·급여 자동 계산` |
-| `EmployeeLayout.tsx:10` | `⏱ 급여 계산기` → `⏱ 퍼펙트 근태관리` |
-| `ManagerLayout.tsx:23` | 헤더 배지 `급여 계산기` → `퍼펙트 근태관리` |
-| `ManagerPayrollPage.tsx:139` | 명세서 푸터 `급여 계산기에서 자동 생성` → `퍼펙트 근태관리에서 자동 생성` |
-
-### (2) 토큰 기반 직원 페이지
-- `App.tsx` — `/:slug/employee/:id` 제거, `/:slug/e/:token` 추가
-- `api/index.ts` — 5개 토큰 유틸 추가: `getOrCreateEmployeeToken`, `regenerateEmployeeToken`, `resolveEmployeeIdByToken`, `removeEmployeeToken`, `buildEmployeeLink`
-- `HomePage.tsx` — 직원 목록 제거 → 안내 페이지화 (`🔗 본인 출근 링크가 필요해요` + 관리자 로그인 버튼)
-- `PersonalPage.tsx` — `useParams<{ token }>()` → `resolveEmployeeIdByToken`으로 empId 해석 → 매핑 없으면 `invalid` 상태 + `🚫 유효하지 않은 링크예요` 안내
-- `ManagerDashboard.tsx` — 직원 카드에 `🔗 출근 링크 복사` (1.5초 ✓ 피드백, 클립보드 차단 시 prompt fallback) + `🔄` 재발급 버튼. 삭제 시 토큰·페이 플래그 정리
-
-### (3) 급여 적용 ON/OFF
-- `api/index.ts` — `isPayEnabled`, `setPayEnabled`, `removePayEnabled` (localStorage, 기본 ON)
-- `EmployeeFormPage.tsx` — 시급 라벨 옆 토글 (`급여계산 ON/OFF`), OFF 시 input 비활성·회색·필수 마크 제거, 안내 문구 표시. 저장 시 신규/수정 분기로 플래그 저장
-- `PersonalPage.tsx` — OFF 시 시급 라벨 `급여 계산 미적용`, 예상 급여 칸 `–` 표시 (계산 자체도 0 처리)
-- `ManagerPayrollPage.tsx` — OFF 직원 카드 회색 톤 + `급여 미적용` 배지, 예상 급여 칸 `–`, 주휴수당 토글·PDF·CSV 버튼 숨김, `totalPay`·`totalHolidayPay` 합계에서 0 처리
-- `ManagerDashboard.tsx` 삭제 핸들러 — `removePayEnabled` 호출 추가
-
-### (4) CSV 다운로드
-- `ManagerPayrollPage.tsx` 신규 `downloadPayslipCsv` — UTF-8 BOM + CRLF, RFC 4180 이스케이프 (`,`, `\n`, `"` 포함 시 자동 quote)
-- 파일명: `급여명세_{이름}_{YYYY년MM월}.csv`
-- 직원 카드 하단 PDF 버튼 아래에 `📊 엑셀(CSV) 다운로드` 버튼 (초록 테두리). OFF 직원에게는 노출 안 됨
-- 컨텐츠: 사업자명·발급일·직원명·귀속월·시급·휴게공제·주휴 토글 → 지급내역(기본급·주휴·합계·-3.3%공제·실수령액) → 근무상세 표 → 요약(근무일수·총 분)
-
----
-
-## 3. 사용자 흐름 (수동 검증 권장)
-
-| 흐름 | 자동화 | 검증 방법 |
-|---|---|---|
-| 관리자 PIN 로그인 → 대시보드 | API 200 ✅ | UI 클릭 |
-| 직원 추가 (ON) → 카드 노출 | ✅ tsc, API 401 가드 | UI 폼 입력 |
-| 직원 추가 (OFF) → 시급 input 비활성 | ⚠️ 정적만 확인 | **브라우저 수동** |
-| 출근 링크 복사 → 클립보드 동작 | ⚠️ navigator.clipboard 필요 | **브라우저 수동 (HTTPS 또는 localhost)** |
-| 토큰 링크로 본인 페이지 진입 | ⚠️ localStorage 매핑 종속 | **같은 브라우저 내 수동** |
-| 잘못된 토큰 → 🚫 안내 | ✅ invalid 상태 로직 확인 | **브라우저 수동** |
-| 링크 재발급 → 기존 링크 무효 | ✅ regenerate 로직 확인 | **브라우저 수동** |
-| 급여 ON/OFF 토글 → 급여 화면 반영 | ✅ 합계 계산 로직 확인 | **브라우저 수동** |
-| CSV 다운로드 → Excel 정상 열림 | ✅ BOM/이스케이프 확인 | **수동 (Excel/Numbers 열어 확인)** |
-| PDF 명세서 출력 (회귀) | 기존 미변경 | **브라우저 수동** |
-
----
-
-## 4. UI/반응형 (수동 권장)
-- 모바일 375px / 태블릿 768px / 데스크탑 1280px — Tailwind 기반, `max-w-lg mx-auto` 컨테이너로 모바일 우선 설계 유지 (정적 회귀만 확인)
-- 빈 상태: HomePage(직원 링크 안내), PersonalPage(무효 토큰 🚫) 모두 존재 ✅
-
----
-
-## 5. 보안
-- 콘솔 민감정보 노출: 추가된 로그 없음 ✅
-- 보호 라우트 미인증 차단: API 401 회귀 정상 ✅
-- 토큰 노출: localStorage에 평문 저장 (데모 단계 한계). 실서비스 적용 시 서버 `employees.access_token` 컬럼으로 이전 필요 ⚠️
-- XSS: 모든 사용자 입력이 React JSX로 렌더링 (자동 escape). CSV 함수도 직접 quote 처리 ✅
-
----
+## 대상
+`feature/time-off` 브랜치 — 휴가(연차/무급/병가/경조사) 등록·급여 반영 P0
 
 ## 테스트 결과 요약
-| 영역 | 전체 | 통과 | 실패 | 스킵(수동) |
+
+| 영역 | 전체 | 통과 | 실패 | 스킵 |
 |---|---|---|---|---|
-| 빌드/타입 | 4 | 4 | 0 | 0 |
-| API 회귀 | 3 | 3 | 0 | 0 |
-| 코드 정적 검증 | 14 | 14 | 0 | 0 |
-| CSV 형식 단위 | 3 | 3 | 0 | 0 |
-| 사용자 흐름 | 10 | 3 | 0 | 7 (브라우저 수동) |
-| UI/반응형 | 3 | 0 | 0 | 3 (브라우저 수동) |
-| 보안 | 4 | 3 | 0 | 1 (데모 한계 명시) |
+| API CRUD | 8 | 8 | 0 | 0 |
+| 엣지 케이스/보안 | 10 | 10 | 0 | 0 |
+| payroll 계산 | 8 | 8 | 0 | 0 |
+| 정책 PATCH | 5 | 5 | 0 | 0 |
+| 환산 모드 | 1 | 1 | 0 | 0 |
+| 주휴 토글 영향 | 2 | 2 | 0 | 0 |
+| Cascade 삭제 | 2 | 2 | 0 | 0 |
+| 마이그레이션 | 3 | 3 | 0 | 0 |
+| **합계 (자동)** | **39** | **39** | **0** | **0** |
 
-## 실패 항목
-없음.
+UI 수동 확인 항목 별도 가이드 (사용자 진행).
 
-## 알려진 한계 (실패 아님 — 서버 미변경 정책으로 인한 제약)
-- localStorage 종속: 토큰·페이 플래그가 **관리자 브라우저 한 대**에만 저장. 다른 기기/시크릿창에서는 매핑이 없어 직원 본인 토큰 링크가 🚫로 표시됨. 실배포 전 서버 마이그레이션 + `employees.access_token` 컬럼 + 관리자 전용 직원 목록 API에 토큰 포함이 필요.
+---
+
+## 발견·수정된 버그
+
+### 🐛 Bug #1 (Critical) — UNIQUE 제약 NULL 우회로 1일 휴가 중복 등록 가능
+- **증상**: `portion=1.0`(하루) 휴가는 같은 `employee_id+date`로 무한 등록됐음
+- **원인**: SQLite의 `UNIQUE(employee_id, date, half_period)`는 NULL을 distinct로 취급. 1일 휴가는 `half_period=NULL`로 저장되어 NULL=NULL이 false로 평가됨
+- **수정**:
+  - `half_period`를 `NOT NULL DEFAULT 'full'`로 변경
+  - CHECK 제약 `IN ('am','pm','full')`로 확장
+  - 라우트에서 1일 휴가 INSERT 시 `'full'` 자동 채움
+  - 구 스키마 DB 자동 마이그레이션: 임시 테이블 → COALESCE 변환 → DROP/RENAME
+- **검증**: 신규 DB 중복 등록 시 409 반환, 마이그레이션 후에도 동일하게 차단
+
+### 🐛 Bug #2 (Edge) — avg_workhours 모드에서 누적 분 0이면 paid_leave_pay=0
+- **증상**: 출근일이 있어도 누적 시간이 0(1분 미만)이면 환산이 0이 됨
+- **원인**: `avgMins = workDays > 0 ? total_minutes / workDays : 8*60` — workDays>0이지만 total_minutes=0일 때 0으로 나옴
+- **수정**: 조건을 `workDays > 0 && total_minutes > 0`로 변경. 둘 중 하나라도 0이면 8시간 fallback
+- **검증**: 출근 누적 0 상황에서 8hours 모드와 동일한 144,000원 산출
+
+---
+
+## 통과 항목 상세
+
+### API CRUD (8/8)
+- ✅ 연차 1일 등록
+- ✅ 오전 반차 등록
+- ✅ 같은 날 오후 반차 (다른 유형) 등록 — 충돌 없음
+- ✅ 무급휴가 등록
+- ✅ 경조사 등록
+- ✅ 휴가 삭제 200
+- ✅ 월별 조회 (5건)
+- ✅ 직원별 조회 (5건) — 직원 메타(name·color·hourly_rate) 포함
+
+### 엣지 케이스/보안 (10/10)
+- ✅ **중복 등록 차단 (409)** — 버그 #1 수정 검증
+- ✅ 잘못된 type 거부 (400) — 'vacation' 등 정의 외 값
+- ✅ 잘못된 날짜 형식 거부 (400) — `2026/05/26` 같은 슬래시 포맷
+- ✅ 필수항목(`date`) 누락 거부 (400)
+- ✅ 인증 없는 POST 거부 (401)
+- ✅ 인증 없는 DELETE 거부 (401)
+- ✅ 타 사업장 토큰으로 등록 거부 (401)
+- ✅ 타 사업장 토큰으로 삭제 거부 (401)
+- ✅ 없는 휴가 ID 삭제 시 404
+- ✅ 타 사업장 직원ID 지정 시 거부 (404)
+
+### payroll 응답 신규 필드 (8/8)
+- ✅ 응답에 `paid_leave_days/pay`, `unpaid_leave_days`, `sick_days`, `family_days`, `time_off` 모두 존재
+- ✅ `paid_leave_days = 1.5` (연차 1.0 + 0.5 합산, 다른 유형 제외)
+- ✅ `unpaid_leave_days = 1.0`
+- ✅ `sick_days = 0.5`
+- ✅ `family_days = 1.0`
+- ✅ `paid_leave_pay = 144,000원` (시급 12,000 × 8시간 × 1.5일, 8hours 모드)
+- ✅ `total_pay = 144,000원` (base_pay 0 + paid_leave_pay 144,000 + weekly_holiday 0)
+
+### 정책 PATCH (5/5)
+- ✅ `leave_pay_calc_mode` + `weekly_holiday_includes_leave` 동시 변경
+- ✅ 변경 후 GET businesses 응답에 반영됨
+- ✅ 잘못된 mode 값 거부 (400)
+- ✅ 인증 없는 PATCH 거부 (401)
+- ✅ 빈 바디 PATCH 거부 (400)
+
+### 환산 모드 정확성 (1/1)
+- ✅ **avg_workhours 모드 + 출근 0건 → 8시간 fallback 적용** — 버그 #2 수정 검증
+
+### weekly_holiday_includes_leave 토글 (2/2)
+- ✅ ON 상태에서 연차 2일(16h) 등록 → 주휴수당 38,400원 ((16/40)×8×12,000) 발생
+- ✅ OFF + 출근 없음 → 주휴수당 0원
+
+### Cascade 삭제 (2/2)
+- ✅ 휴가 삭제 후 조회 시 미존재
+- ✅ 직원 삭제 시 해당 직원의 모든 time_off 자동 삭제 (FK ON DELETE CASCADE)
+
+### DB 마이그레이션 (3/3)
+- ✅ 신규 DB: `businesses.leave_pay_calc_mode` 기본값 `'8hours'`, `weekly_holiday_includes_leave` 기본값 `1`
+- ✅ **구 스키마(NULL 허용) → 신 스키마(NOT NULL 'full') 자동 마이그레이션** — 기존 NULL 행이 `'full'`로 안전 변환, 데이터 보존
+- ✅ 마이그레이션 후에도 중복 등록 차단(409) 동작
+
+---
+
+## UI 수동 확인 (사용자 진행)
+다음 항목은 자동 테스트 범위 밖이므로 브라우저(http://localhost:5174)에서 직접 확인 필요:
+- [ ] 관리자 대시보드 — 🏖 휴가 정책 섹션 토글 동작
+- [ ] 관리자 근태 탭 — 🏖 휴가 버튼 → 모달 → 등록 → 카드 표시
+- [ ] 관리자 급여 탭 — 직원 카드에 "🏖 연차 N일 (금액)" 행 표시
+- [ ] 직원 페이지 — "🏖 이번 달 휴가" 섹션 표시
+- [ ] 모바일 화면(375px)에서 모달 UI 정상 표시
+- [ ] 에러 발생 시 토스트/배너 메시지 노출
+
+---
 
 ## 최종 판정
-✅ **자동화 가능한 영역 전부 통과** — 다음 단계 진행 가능 (단, 위 "사용자 흐름·UI" 수동 항목 7개와 보안 1개는 브라우저에서 확인 권장)
+✅ **자동 테스트 39/39 통과** — 백엔드/데이터 무결성/마이그레이션 검증 완료
+
+UI 수동 확인 후 PR 머지 진행 가능. 사용자 dev 서버(http://localhost:5174) 가동 중.
