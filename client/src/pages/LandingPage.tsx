@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchBusiness } from '../api'
 
-const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSc-j4HYY01OlGgFwTlGZHLuzpkP474N2cNdCQdLUnT4CyGr6w/viewform'
+const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfqabZynjYejxaNUbJoCAL1LmBFZh5a1lCF4WudjaNvFEtVkg/viewform'
 const ADMIN_PASSWORD = 'alba2024'
 
 export default function LandingPage() {
