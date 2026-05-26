@@ -308,7 +308,13 @@ export default function AttendancePage() {
                             {t.memo && <span className="ml-2 text-gray-500 font-normal">({t.memo})</span>}
                           </div>
                         </div>
-                        <button onClick={() => handleDeleteTimeOff(t.id)} className="text-gray-300 hover:text-red-400 p-1">🗑</button>
+                        <button
+                          onClick={() => handleDeleteTimeOff(t.id)}
+                          aria-label="휴가 삭제"
+                          className="shrink-0 text-base text-gray-500 hover:text-red-500 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition"
+                        >
+                          🗑
+                        </button>
                       </div>
                     )
                   })}
@@ -363,9 +369,25 @@ export default function AttendancePage() {
                                 {seg && <span className="ml-2 font-semibold text-green-600">{fmtDuration(seg.mins)}</span>}
                               </div>
                             </div>
-                            <div className="flex gap-1">
-                              {isFirstSeg && <button onClick={() => startEdit(r)} className="text-gray-300 hover:text-gray-500 p-1">✏️</button>}
-                              {isLastSeg && <button onClick={() => handleDelete(r.id)} className="text-gray-300 hover:text-red-400 p-1">🗑</button>}
+                            <div className="flex gap-1 shrink-0">
+                              {isFirstSeg && (
+                                <button
+                                  onClick={() => startEdit(r)}
+                                  aria-label="근태 편집"
+                                  className="text-base text-gray-500 hover:text-blue-500 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg px-2.5 py-1.5 transition"
+                                >
+                                  ✏️
+                                </button>
+                              )}
+                              {isLastSeg && (
+                                <button
+                                  onClick={() => handleDelete(r.id)}
+                                  aria-label="근태 삭제"
+                                  className="text-base text-gray-500 hover:text-red-500 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg px-2.5 py-1.5 transition"
+                                >
+                                  🗑
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}

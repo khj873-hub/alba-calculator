@@ -31,6 +31,9 @@ async function req<T>(url: string, options?: RequestInit, sessionToken?: string)
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: '오류가 발생했습니다' }))
+    if (res.status === 401) {
+      throw new Error('관리자 인증이 만료됐습니다. 페이지를 새로고침한 뒤 PIN을 다시 입력해주세요.')
+    }
     throw new Error(err.error || '오류가 발생했습니다')
   }
   return res.json()

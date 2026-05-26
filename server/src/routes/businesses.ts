@@ -21,7 +21,8 @@ export default async function businessesRoutes(app: FastifyInstance) {
       if (!manager_pin || manager_pin.length < 4) return reply.code(400).send({ error: 'PIN은 4자리 이상이어야 합니다' })
       const slug = generateSlug()
       const hashedPin = hashPin(manager_pin)
-      db.prepare('INSERT INTO businesses (slug, name, manager_pin) VALUES (?, ?, ?)').run(slug, name.trim(), hashedPin)
+      // time_off_enabled는 DB DEFAULT 0이지만 명시적으로 OFF 보장
+      db.prepare('INSERT INTO businesses (slug, name, manager_pin, time_off_enabled) VALUES (?, ?, ?, 0)').run(slug, name.trim(), hashedPin)
       return { slug, name: name.trim() }
     }
   )
