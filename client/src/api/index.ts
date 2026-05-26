@@ -1,4 +1,4 @@
-import type { Business, Employee, AttendanceRecord, PayrollEntry, HomeMode } from '../types'
+import type { Business, Employee, AttendanceRecord, PayrollEntry, HomeMode, TimeOffRecord, LeaveType, HalfPeriod, LeavePayCalcMode } from '../types'
 
 const BASE = '/api'
 
@@ -55,6 +55,25 @@ export const updateHomeMode = (slug: string, home_mode: HomeMode) =>
   req<{ ok: boolean; home_mode: HomeMode }>(`/businesses/${slug}/home-mode`, {
     method: 'PATCH', body: JSON.stringify({ home_mode })
   }, getStoredToken(slug))
+
+// 사업장 휴가 정책 (관리자 세션 인증)
+export const updateLeavePolicy = (slug: string, body: { leave_pay_calc_mode?: LeavePayCalcMode; weekly_holiday_includes_leave?: boolean }) =>
+  req<{ ok: boolean; leave_pay_calc_mode: LeavePayCalcMode; weekly_holiday_includes_leave: number }>(
+    `/businesses/${slug}/leave-policy`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+    getStoredToken(slug)
+  )
+
+// 휴가 (조회: 인증 불필요 / 등록·삭제: 관리자 세션)
+export const fetchTimeOff = (slug: string, year: number, month: number, employee_id?: number) => {
+  const params = new URLSearchParams({ year: String(year), month: String(month) })
+  if (employee_id) params.set('employee_id', String(employee_id))
+  return req<TimeOffRecord[]>(`/${slug}/time-off?${params}`)
+}
+export const createTimeOff = (slug: string, body: { employee_id: number; date: string; type: LeaveType; portion: number; half_period?: HalfPeriod | null; memo?: string }) =>
+  req<TimeOffRecord>(`/${slug}/time-off`, { method: 'POST', body: JSON.stringify(body) }, getStoredToken(slug))
+export const deleteTimeOff = (slug: string, id: number) =>
+  req<{ ok: boolean }>(`/${slug}/time-off/${id}`, { method: 'DELETE' }, getStoredToken(slug))
 
 // 직원 (읽기: 인증 불필요 / 쓰기: 관리자 인증 필요)
 export const fetchEmployees = (slug: string) =>

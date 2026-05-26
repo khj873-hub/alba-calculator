@@ -89,6 +89,14 @@ const migrate = db.transaction(() => {
   if (!bizColsAfter.find((c: any) => c.name === 'home_mode')) {
     db.exec("ALTER TABLE businesses ADD COLUMN home_mode TEXT NOT NULL DEFAULT 'kiosk'")
   }
+  // v3 마이그레이션: 휴가(연차/무급/병가/경조사) 기능
+  const bizColsV3 = db.prepare('PRAGMA table_info(businesses)').all() as any[]
+  if (!bizColsV3.find((c: any) => c.name === 'leave_pay_calc_mode')) {
+    db.exec("ALTER TABLE businesses ADD COLUMN leave_pay_calc_mode TEXT NOT NULL DEFAULT '8hours'")
+  }
+  if (!bizColsV3.find((c: any) => c.name === 'weekly_holiday_includes_leave')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN weekly_holiday_includes_leave INTEGER NOT NULL DEFAULT 1')
+  }
 })
 migrate()
 
@@ -118,6 +126,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_att_clock_in ON attendance(clock_in);
   CREATE INDEX IF NOT EXISTS idx_emp_business ON employees(business_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_token ON employees(access_token);
+
+  CREATE TABLE IF NOT EXISTS time_off (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('annual','unpaid','sick','family')),
+    portion REAL NOT NULL DEFAULT 1.0 CHECK(portion IN (0.5, 1.0)),
+    half_period TEXT CHECK(half_period IN ('am','pm') OR half_period IS NULL),
+    memo TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE(employee_id, date, half_period)
+  );
+  CREATE INDEX IF NOT EXISTS idx_timeoff_emp_date ON time_off(employee_id, date);
 `)
 
 // 토큰 헬퍼 (employees INSERT 시 사용)

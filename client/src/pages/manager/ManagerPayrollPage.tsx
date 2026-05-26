@@ -14,6 +14,9 @@ interface AdjustedEntry {
   totalMins: number
   basePay: number
   holidayPay: number
+  leavePay: number
+  paidLeaveDays: number
+  unpaidDays: number
   totalPay: number
   workDays: number
 }
@@ -46,7 +49,10 @@ function getAdjusted(entry: PayrollEntry, breakEnabled: boolean, holidayEnabled:
   }
 
   const basePay = Math.floor((totalMins / 60) * entry.hourly_rate)
-  return { totalMins, basePay, holidayPay, totalPay: basePay + holidayPay, workDays }
+  const leavePay = entry.paid_leave_pay ?? 0
+  const paidLeaveDays = entry.paid_leave_days ?? 0
+  const unpaidDays = entry.unpaid_leave_days ?? 0
+  return { totalMins, basePay, holidayPay, leavePay, paidLeaveDays, unpaidDays, totalPay: basePay + holidayPay + leavePay, workDays }
 }
 
 function downloadPayslipCsv(
@@ -301,7 +307,7 @@ export default function PayrollPage() {
   const adjustedData = data.map(e => {
     const payOn = (employees.find(emp => emp.id === e.employee_id)?.pay_enabled ?? 1) === 1
     const baseAdj = getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true)
-    const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, totalPay: 0 }
+    const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, leavePay: 0, totalPay: 0 }
     return { entry: e, adj, payOn }
   })
   const totalPay = adjustedData.reduce((s, { adj }) => s + adj.totalPay, 0)
@@ -458,6 +464,11 @@ export default function PayrollPage() {
                       <div className={`text-xs ${holidayOn && adj.holidayPay > 0 ? 'text-green-500' : 'text-gray-400'}`}>
                         주휴수당 {holidayOn ? adj.holidayPay.toLocaleString() : 0}원
                       </div>
+                      {adj.leavePay > 0 && (
+                        <div className="text-xs text-emerald-600">
+                          🏖 연차 {adj.paidLeaveDays}일 ({adj.leavePay.toLocaleString()}원)
+                        </div>
+                      )}
                       <div className="text-xs text-green-600">3.3% 제외 ({Math.floor(adj.totalPay * 0.967).toLocaleString()}원)</div>
                     </div>
                   ) : (

@@ -33,12 +33,7 @@ function getWeekKey(dateStr: string): string {
   return monday.toISOString().slice(0, 10)
 }
 
-function calcWeeklyHolidayPay(records: { clock_in: string; duration_minutes: number }[], hourlyRate: number): number {
-  const weekMap = new Map<string, number>()
-  for (const r of records) {
-    const wk = getWeekKey(r.clock_in)
-    weekMap.set(wk, (weekMap.get(wk) ?? 0) + r.duration_minutes)
-  }
+function calcWeeklyHolidayPay(weekMap: Map<string, number>, hourlyRate: number): number {
   let total = 0
   for (const weekMins of weekMap.values()) {
     if (weekMins >= 15 * 60) {
@@ -151,6 +146,14 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const { year, month } = req.query
       const prefix = `${year}-${String(month).padStart(2, '0')}`
 
+      const biz = db.prepare(
+        'SELECT leave_pay_calc_mode, weekly_holiday_includes_leave FROM businesses WHERE slug = ?'
+      ).get(slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+
+      const leaveMode: '8hours' | 'avg_workhours' = biz.leave_pay_calc_mode === 'avg_workhours' ? 'avg_workhours' : '8hours'
+      const includeLeaveInWeekly: boolean = biz.weekly_holiday_includes_leave === 1
+
       const records = db.prepare(`
         SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
         FROM attendance a
@@ -158,6 +161,13 @@ export default async function attendanceRoutes(app: FastifyInstance) {
         JOIN businesses b ON b.id = e.business_id
         WHERE b.slug = ? AND a.clock_in LIKE ? AND a.clock_out IS NOT NULL
         ORDER BY e.id, a.clock_in
+      `).all(slug, `${prefix}%`) as any[]
+
+      const timeOffRows = db.prepare(`
+        SELECT t.* FROM time_off t
+        JOIN employees e ON e.id = t.employee_id
+        JOIN businesses b ON b.id = e.business_id
+        WHERE b.slug = ? AND t.date LIKE ?
       `).all(slug, `${prefix}%`) as any[]
 
       const map = new Map<number, any>()
@@ -170,6 +180,11 @@ export default async function attendanceRoutes(app: FastifyInstance) {
             color: r.color,
             total_minutes: 0,
             records: [],
+            time_off: [] as any[],
+            paid_leave_days: 0,
+            unpaid_leave_days: 0,
+            sick_days: 0,
+            family_days: 0,
           })
         }
         const entry = map.get(r.employee_id)
@@ -178,10 +193,73 @@ export default async function attendanceRoutes(app: FastifyInstance) {
         entry.records.push({ ...r, duration_minutes: mins })
       }
 
+      // time_off 합산 (출근기록이 없는 직원도 포함될 수 있으므로 직원 메타가 필요)
+      for (const t of timeOffRows) {
+        let entry = map.get(t.employee_id)
+        if (!entry) {
+          const emp = db.prepare('SELECT name, hourly_rate, color FROM employees WHERE id = ?').get(t.employee_id) as any
+          if (!emp) continue
+          entry = {
+            employee_id: t.employee_id,
+            employee_name: emp.name,
+            hourly_rate: emp.hourly_rate,
+            color: emp.color,
+            total_minutes: 0,
+            records: [],
+            time_off: [],
+            paid_leave_days: 0,
+            unpaid_leave_days: 0,
+            sick_days: 0,
+            family_days: 0,
+          }
+          map.set(t.employee_id, entry)
+        }
+        entry.time_off.push(t)
+        if (t.type === 'annual') entry.paid_leave_days += t.portion
+        else if (t.type === 'unpaid') entry.unpaid_leave_days += t.portion
+        else if (t.type === 'sick') entry.sick_days += t.portion
+        else if (t.type === 'family') entry.family_days += t.portion
+      }
+
       return Array.from(map.values()).map((e) => {
         const base_pay = Math.floor((e.total_minutes / 60) * e.hourly_rate)
-        const weekly_holiday_pay = calcWeeklyHolidayPay(e.records, e.hourly_rate)
-        return { ...e, base_pay, weekly_holiday_pay, total_pay: base_pay + weekly_holiday_pay }
+
+        // 유급 연차 환산
+        let paid_leave_pay = 0
+        if (e.paid_leave_days > 0) {
+          if (leaveMode === '8hours') {
+            paid_leave_pay = Math.floor(e.paid_leave_days * 8 * e.hourly_rate)
+          } else {
+            // 평일 평균: 해당 직원의 그달 출근일(unique date) 기준 평균 분
+            const dateSet = new Set<string>(e.records.map((r: any) => r.clock_in.slice(0, 10)))
+            const workDays = dateSet.size
+            const avgMins = workDays > 0 ? e.total_minutes / workDays : 8 * 60
+            paid_leave_pay = Math.floor((avgMins / 60) * e.hourly_rate * e.paid_leave_days)
+          }
+        }
+
+        // 주차별 분 집계 (출근 + 유급 연차[설정 시])
+        const weekMap = new Map<string, number>()
+        for (const r of e.records) {
+          const wk = getWeekKey(r.clock_in)
+          weekMap.set(wk, (weekMap.get(wk) ?? 0) + r.duration_minutes)
+        }
+        if (includeLeaveInWeekly) {
+          for (const t of e.time_off) {
+            if (t.type !== 'annual') continue
+            const wk = getWeekKey(t.date + 'T00:00:00')
+            weekMap.set(wk, (weekMap.get(wk) ?? 0) + Math.floor(t.portion * 8 * 60))
+          }
+        }
+        const weekly_holiday_pay = calcWeeklyHolidayPay(weekMap, e.hourly_rate)
+
+        return {
+          ...e,
+          base_pay,
+          weekly_holiday_pay,
+          paid_leave_pay,
+          total_pay: base_pay + weekly_holiday_pay + paid_leave_pay,
+        }
       })
     }
   )

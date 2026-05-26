@@ -1,4 +1,7 @@
 export type HomeMode = 'kiosk' | 'private'
+export type LeavePayCalcMode = '8hours' | 'avg_workhours'
+export type LeaveType = 'annual' | 'unpaid' | 'sick' | 'family'
+export type HalfPeriod = 'am' | 'pm'
 
 export interface Business {
   id: number
@@ -9,6 +12,22 @@ export interface Business {
   lng?: number | null
   radius_meters?: number | null
   home_mode?: HomeMode
+  leave_pay_calc_mode?: LeavePayCalcMode
+  weekly_holiday_includes_leave?: number
+}
+
+export interface TimeOffRecord {
+  id: number
+  employee_id: number
+  employee_name?: string
+  color?: string
+  hourly_rate?: number
+  date: string
+  type: LeaveType
+  portion: number
+  half_period: HalfPeriod | null
+  memo: string | null
+  created_at: string
 }
 
 export interface Employee {
@@ -43,6 +62,12 @@ export interface PayrollEntry {
   total_minutes: number
   base_pay: number
   weekly_holiday_pay: number
+  paid_leave_pay: number
+  paid_leave_days: number
+  unpaid_leave_days: number
+  sick_days: number
+  family_days: number
   total_pay: number
   records: AttendanceRecord[]
+  time_off: TimeOffRecord[]
 }

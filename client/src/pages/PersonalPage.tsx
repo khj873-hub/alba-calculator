@@ -1,10 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness } from '../api'
+import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness, fetchTimeOff } from '../api'
 import { useSlug } from '../hooks/useSlug'
 import { getCurrentPosition } from '../utils/geo'
 import { calcWeeklyHolidayPay } from '../utils/pay'
-import type { Employee, AttendanceRecord, Business } from '../types'
+import type { Employee, AttendanceRecord, Business, TimeOffRecord, LeaveType } from '../types'
+
+const LEAVE_LABELS: Record<LeaveType, { label: string; color: string }> = {
+  annual: { label: '연차', color: 'text-emerald-600' },
+  unpaid: { label: '무급', color: 'text-gray-500' },
+  sick: { label: '병가', color: 'text-orange-600' },
+  family: { label: '경조', color: 'text-purple-600' },
+}
 
 function fmtDuration(mins: number) {
   const h = Math.floor(mins / 60)
@@ -32,6 +39,7 @@ export default function PersonalPage() {
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [business, setBusiness] = useState<Business | null>(null)
   const [records, setRecords] = useState<AttendanceRecord[]>([])
+  const [timeOffs, setTimeOffs] = useState<TimeOffRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [invalid, setInvalid] = useState(false)
   const [acting, setActing] = useState(false)
@@ -59,9 +67,13 @@ export default function PersonalPage() {
       if (!emp) { setInvalid(true); setLoading(false); return }
 
       const today = new Date()
-      const recs = await fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id)
+      const [recs, tos] = await Promise.all([
+        fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id),
+        fetchTimeOff(slug, today.getFullYear(), today.getMonth() + 1, emp.id),
+      ])
       setEmployee(emp)
       setRecords(recs)
+      setTimeOffs(tos)
     } catch {
       setInvalid(true)
     } finally {
@@ -215,6 +227,32 @@ export default function PersonalPage() {
           </div>
         </div>
       </div>
+
+      {timeOffs.length > 0 && (
+        <div className="mb-4">
+          <div className="text-xs font-bold text-gray-400 mb-2">🏖 이번 달 휴가</div>
+          <div className="flex flex-col gap-2">
+            {timeOffs.map(t => {
+              const meta = LEAVE_LABELS[t.type]
+              return (
+                <div key={t.id} className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 flex justify-between items-center">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600">{t.date}</div>
+                    <div className={`text-xs font-bold ${meta.color}`}>
+                      {meta.label}
+                      {t.portion === 0.5
+                        ? <span> · {t.half_period === 'am' ? '오전 반차' : '오후 반차'}</span>
+                        : <span> · 하루</span>}
+                      {t.memo && <span className="ml-2 text-gray-400 font-normal">({t.memo})</span>}
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-600">{t.portion}일</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="text-xs font-bold text-gray-400 mb-2">최근 출퇴근 기록</div>
       {records.length === 0 ? (
