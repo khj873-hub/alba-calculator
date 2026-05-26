@@ -116,6 +116,12 @@ const migrate = db.transaction(() => {
   if (!bizColsV3.find((c: any) => c.name === 'owner_user_id')) {
     db.exec('ALTER TABLE businesses ADD COLUMN owner_user_id INTEGER REFERENCES users(id)')
   }
+  if (!bizColsV3.find((c: any) => c.name === 'is_active')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!bizColsV3.find((c: any) => c.name === 'suspended_at')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN suspended_at TEXT')
+  }
   // time_off 테이블이 구 스키마(half_period NULL 허용)면 신 스키마로 재생성
   const toExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='time_off'").get() as any
   if (toExists) {

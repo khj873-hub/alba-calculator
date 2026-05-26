@@ -18,6 +18,10 @@ export function buildEmployeeLink(slug: string, token: string): string {
   return `${window.location.origin}/${slug}/e/${token}`
 }
 
+export class ServiceSuspendedError extends Error {
+  constructor(message: string) { super(message); this.name = 'ServiceSuspendedError' }
+}
+
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {
   // body가 있을 때만 Content-Type 지정 (Fastify는 body 없는데 Content-Type:json이면
   // FST_ERR_CTP_EMPTY_JSON_BODY 400 반환 — DELETE without body가 여기 해당)
@@ -31,6 +35,9 @@ async function req<T>(url: string, options?: RequestInit, sessionToken?: string)
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: '오류가 발생했습니다' }))
+    if (res.status === 403 && err.error === 'service_suspended') {
+      throw new ServiceSuspendedError(err.message || '서비스 이용이 일시 제한되었습니다.')
+    }
     if (res.status === 401) {
       throw new Error('관리자 인증이 만료됐습니다. 페이지를 새로고침한 뒤 PIN을 다시 입력해주세요.')
     }

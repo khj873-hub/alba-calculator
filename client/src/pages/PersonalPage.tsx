@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness, fetchTimeOff } from '../api'
+import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness, fetchTimeOff, ServiceSuspendedError } from '../api'
+import SuspendedNotice from '../components/SuspendedNotice'
 import { useSlug } from '../hooks/useSlug'
 import { getCurrentPosition } from '../utils/geo'
 import { calcWeeklyHolidayPay } from '../utils/pay'
@@ -49,6 +50,7 @@ export default function PersonalPage() {
   const [timeOffs, setTimeOffs] = useState<TimeOffRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [invalid, setInvalid] = useState(false)
+  const [suspended, setSuspended] = useState(false)
   const [acting, setActing] = useState(false)
   const [gpsLoading, setGpsLoading] = useState(false)
   const [error, setError] = useState('')
@@ -81,8 +83,9 @@ export default function PersonalPage() {
       setEmployee(emp)
       setRecords(recs)
       setTimeOffs(tos)
-    } catch {
-      setInvalid(true)
+    } catch (e: any) {
+      if (e instanceof ServiceSuspendedError) setSuspended(true)
+      else setInvalid(true)
     } finally {
       setLoading(false)
     }
@@ -117,6 +120,7 @@ export default function PersonalPage() {
   const totalMins = inMonthSegs.reduce((s, x) => s + x.s.mins, 0)
   const dateSet = new Set<string>(inMonthSegs.map(x => x.s.date))
 
+  if (suspended) return <SuspendedNotice slug={slug} />
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
   if (invalid) {
     const headline = mode === 'private' ? '유효하지 않은 링크예요' : '직원을 찾을 수 없어요'
