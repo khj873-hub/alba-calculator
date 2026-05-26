@@ -74,13 +74,13 @@ export default function PersonalPage() {
       if (!emp) { setInvalid(true); setLoading(false); return }
 
       const today = new Date()
-      const timeOffOn = (biz.time_off_enabled ?? 0) === 1
-      const tasks: Promise<any>[] = [fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id)]
-      if (timeOffOn) tasks.push(fetchTimeOff(slug, today.getFullYear(), today.getMonth() + 1, emp.id))
-      const results = await Promise.all(tasks)
+      const [recs, tos] = await Promise.all([
+        fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id),
+        fetchTimeOff(slug, today.getFullYear(), today.getMonth() + 1, emp.id),
+      ])
       setEmployee(emp)
-      setRecords(results[0])
-      setTimeOffs(timeOffOn ? results[1] : [])
+      setRecords(recs)
+      setTimeOffs(tos)
     } catch {
       setInvalid(true)
     } finally {

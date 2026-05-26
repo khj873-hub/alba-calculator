@@ -262,8 +262,8 @@ export default function ManagerDashboard() {
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
         >
           <span>🏖 휴가 정책</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${timeOffEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>
-            {timeOffEnabled ? `사용 · ${leaveMode === '8hours' ? '8시간 환산' : '평균 환산'}` : '미사용'}
+          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${timeOffEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+            {timeOffEnabled ? `급여 반영 · ${leaveMode === '8hours' ? '8시간 환산' : '평균 환산'}` : '급여 미반영'}
           </span>
           <span className="ml-auto">{showLeavePolicyForm ? '▲' : '▼'}</span>
         </button>
@@ -280,14 +280,14 @@ export default function ManagerDashboard() {
             >
               <div className="flex items-center justify-between">
                 <div className="font-bold text-sm text-gray-800">
-                  휴가 관리 사용
+                  휴가를 급여에 반영
                 </div>
                 <span className={`w-10 h-5 rounded-full relative transition-colors ${timeOffEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}>
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${timeOffEnabled ? 'left-5' : 'left-0.5'}`} />
                 </span>
               </div>
               <p className="text-xs text-gray-500 leading-relaxed mt-1">
-                연차·반차·병가·경조사 등록 기능 사용 여부. 연봉제나 휴가 계산이 필요 없는 사업장은 OFF.
+                OFF여도 휴가 등록·표시는 가능. 급여(주휴수당·연차수당) 자동 계산에만 반영되지 않음. 연봉제·5인 미만 사업장은 OFF 권장.
               </p>
             </button>
 

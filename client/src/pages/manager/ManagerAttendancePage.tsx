@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchEmployees, fetchAttendance, deleteAttendance, updateAttendance, fetchTimeOff, createTimeOff, deleteTimeOff, fetchBusiness } from '../../api'
+import { fetchEmployees, fetchAttendance, deleteAttendance, updateAttendance, fetchTimeOff, createTimeOff, deleteTimeOff } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import type { Employee, AttendanceRecord, TimeOffRecord, LeaveType, HalfPeriod, AttendanceSegment } from '../../types'
 import { splitByMidnight } from '../../utils/segments'
@@ -154,36 +154,58 @@ export default function AttendancePage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [timeOffs, setTimeOffs] = useState<TimeOffRecord[]>([])
-  const [timeOffEnabled, setTimeOffEnabled] = useState<boolean>(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [editIn, setEditIn] = useState('')
   const [editOut, setEditOut] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [confirmAttendanceId, setConfirmAttendanceId] = useState<number | null>(null)
+  const [confirmTimeOffId, setConfirmTimeOffId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null) // "att-{id}" or "to-{id}"
 
   useEffect(() => { fetchEmployees(slug).then(setEmployees) }, [slug])
-  useEffect(() => { fetchBusiness(slug).then(b => setTimeOffEnabled((b.time_off_enabled ?? 0) === 1)).catch(() => {}) }, [slug])
 
   const load = async () => {
-    const tasks: Promise<any>[] = [fetchAttendance(slug, year, month, empId || undefined)]
-    if (timeOffEnabled) tasks.push(fetchTimeOff(slug, year, month, empId || undefined))
-    const results = await Promise.all(tasks)
-    setRecords(results[0])
-    setTimeOffs(timeOffEnabled ? results[1] : [])
+    const [recs, tos] = await Promise.all([
+      fetchAttendance(slug, year, month, empId || undefined),
+      fetchTimeOff(slug, year, month, empId || undefined),
+    ])
+    setRecords(recs)
+    setTimeOffs(tos)
   }
-  useEffect(() => { load() }, [slug, year, month, empId, timeOffEnabled])
+  useEffect(() => { load() }, [slug, year, month, empId])
 
   const handleDelete = async (id: number) => {
-    if (!confirm('이 기록을 삭제할까요?')) return
-    try { await deleteAttendance(slug, id); await load() }
-    catch (e: any) { setError(e.message) }
+    if (confirmAttendanceId !== id) {
+      setConfirmAttendanceId(id); setConfirmTimeOffId(null); setError('')
+      return
+    }
+    setDeletingId(`att-${id}`); setConfirmAttendanceId(null); setError('')
+    try {
+      await deleteAttendance(slug, id)
+      setRecords(prev => prev.filter(r => r.id !== id))  // 즉시 UI 반영
+      await load()
+    } catch (e: any) {
+      setError(`근태 삭제 실패: ${e.message}`)
+      alert(`근태 삭제 실패: ${e.message}`)
+    } finally { setDeletingId(null) }
   }
 
   const handleDeleteTimeOff = async (id: number) => {
-    if (!confirm('이 휴가 기록을 삭제할까요?')) return
-    try { await deleteTimeOff(slug, id); await load() }
-    catch (e: any) { setError(e.message) }
+    if (confirmTimeOffId !== id) {
+      setConfirmTimeOffId(id); setConfirmAttendanceId(null); setError('')
+      return
+    }
+    setDeletingId(`to-${id}`); setConfirmTimeOffId(null); setError('')
+    try {
+      await deleteTimeOff(slug, id)
+      setTimeOffs(prev => prev.filter(t => t.id !== id))  // 즉시 UI 반영
+      await load()
+    } catch (e: any) {
+      setError(`휴가 삭제 실패: ${e.message}`)
+      alert(`휴가 삭제 실패: ${e.message}`)
+    } finally { setDeletingId(null) }
   }
 
   const startEdit = (r: AttendanceRecord) => {
@@ -251,15 +273,13 @@ export default function AttendancePage() {
           <option value="">전체 직원</option>
           {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
-        {timeOffEnabled && (
-          <button
-            onClick={() => setShowModal(true)}
-            disabled={employees.length === 0}
-            className="bg-emerald-500 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-emerald-600 transition disabled:opacity-50 shrink-0"
-          >
-            🏖 휴가
-          </button>
-        )}
+        <button
+          onClick={() => setShowModal(true)}
+          disabled={employees.length === 0}
+          className="bg-emerald-500 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-emerald-600 transition disabled:opacity-50 shrink-0"
+        >
+          🏖 휴가
+        </button>
       </div>
 
       {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-4">{error}</div>}
@@ -311,7 +331,18 @@ export default function AttendancePage() {
                             {t.memo && <span className="ml-2 text-gray-500 font-normal">({t.memo})</span>}
                           </div>
                         </div>
-                        <button onClick={() => handleDeleteTimeOff(t.id)} className="text-gray-300 hover:text-red-400 p-1">🗑</button>
+                        <button
+                          onClick={() => handleDeleteTimeOff(t.id)}
+                          disabled={deletingId === `to-${t.id}`}
+                          aria-label="휴가 삭제"
+                          className={`shrink-0 text-xs font-bold border rounded-lg px-2.5 py-1.5 transition disabled:opacity-50 ${
+                            confirmTimeOffId === t.id
+                              ? 'bg-red-500 text-white border-red-500 hover:bg-red-600 animate-pulse'
+                              : 'bg-white text-gray-500 border-gray-200 hover:text-red-500 hover:bg-red-50 hover:border-red-300'
+                          }`}
+                        >
+                          {deletingId === `to-${t.id}` ? '⏳' : confirmTimeOffId === t.id ? '삭제 확정' : '🗑'}
+                        </button>
                       </div>
                     )
                   })}
@@ -366,9 +397,30 @@ export default function AttendancePage() {
                                 {seg && <span className="ml-2 font-semibold text-green-600">{fmtDuration(seg.mins)}</span>}
                               </div>
                             </div>
-                            <div className="flex gap-1">
-                              {isFirstSeg && <button onClick={() => startEdit(r)} className="text-gray-300 hover:text-gray-500 p-1">✏️</button>}
-                              {isLastSeg && <button onClick={() => handleDelete(r.id)} className="text-gray-300 hover:text-red-400 p-1">🗑</button>}
+                            <div className="flex gap-1 shrink-0">
+                              {isFirstSeg && (
+                                <button
+                                  onClick={() => startEdit(r)}
+                                  aria-label="근태 편집"
+                                  className="text-base text-gray-500 hover:text-blue-500 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg px-2.5 py-1.5 transition"
+                                >
+                                  ✏️
+                                </button>
+                              )}
+                              {isLastSeg && (
+                                <button
+                                  onClick={() => handleDelete(r.id)}
+                                  disabled={deletingId === `att-${r.id}`}
+                                  aria-label="근태 삭제"
+                                  className={`text-xs font-bold border rounded-lg px-2.5 py-1.5 transition disabled:opacity-50 ${
+                                    confirmAttendanceId === r.id
+                                      ? 'bg-red-500 text-white border-red-500 hover:bg-red-600 animate-pulse'
+                                      : 'bg-white text-gray-500 border-gray-200 hover:text-red-500 hover:bg-red-50 hover:border-red-300'
+                                  }`}
+                                >
+                                  {deletingId === `att-${r.id}` ? '⏳' : confirmAttendanceId === r.id ? '삭제 확정' : '🗑'}
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}

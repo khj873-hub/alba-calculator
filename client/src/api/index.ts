@@ -19,10 +19,10 @@ export function buildEmployeeLink(slug: string, token: string): string {
 }
 
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {
-  const method = options?.method?.toUpperCase() ?? 'GET'
-  const needsContentType = method !== 'GET'
+  // body가 있을 때만 Content-Type 지정 (Fastify는 body 없는데 Content-Type:json이면
+  // FST_ERR_CTP_EMPTY_JSON_BODY 400 반환 — DELETE without body가 여기 해당)
   const headers: Record<string, string> = {}
-  if (needsContentType) headers['Content-Type'] = 'application/json'
+  if (options?.body != null) headers['Content-Type'] = 'application/json'
   if (sessionToken) headers['x-session-token'] = sessionToken
 
   const res = await fetch(BASE + url, {
@@ -31,6 +31,9 @@ async function req<T>(url: string, options?: RequestInit, sessionToken?: string)
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: '오류가 발생했습니다' }))
+    if (res.status === 401) {
+      throw new Error('관리자 인증이 만료됐습니다. 페이지를 새로고침한 뒤 PIN을 다시 입력해주세요.')
+    }
     throw new Error(err.error || '오류가 발생했습니다')
   }
   return res.json()
