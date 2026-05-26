@@ -14,15 +14,25 @@ interface AdjustedEntry {
   totalMins: number
   basePay: number
   holidayPay: number
+  leavePay: number
+  paidLeaveDays: number
+  unpaidDays: number
   totalPay: number
   workDays: number
 }
 
 function getAdjusted(entry: PayrollEntry, breakEnabled: boolean, holidayEnabled: boolean): AdjustedEntry {
+  // segment 단위로 일별 누적 (서버가 segments 채워줌. 없으면 clock_in 날짜에 duration_minutes 통째 사용)
   const dateMinMap = new Map<string, number>()
   for (const r of entry.records) {
-    const date = r.clock_in.slice(0, 10)
-    dateMinMap.set(date, (dateMinMap.get(date) ?? 0) + (r.duration_minutes ?? 0))
+    if (r.segments && r.segments.length > 0) {
+      for (const seg of r.segments) {
+        dateMinMap.set(seg.date, (dateMinMap.get(seg.date) ?? 0) + seg.mins)
+      }
+    } else {
+      const date = r.clock_in.slice(0, 10)
+      dateMinMap.set(date, (dateMinMap.get(date) ?? 0) + (r.duration_minutes ?? 0))
+    }
   }
 
   const workDays = dateMinMap.size
@@ -46,7 +56,10 @@ function getAdjusted(entry: PayrollEntry, breakEnabled: boolean, holidayEnabled:
   }
 
   const basePay = Math.floor((totalMins / 60) * entry.hourly_rate)
-  return { totalMins, basePay, holidayPay, totalPay: basePay + holidayPay, workDays }
+  const leavePay = entry.paid_leave_pay ?? 0
+  const paidLeaveDays = entry.paid_leave_days ?? 0
+  const unpaidDays = entry.unpaid_leave_days ?? 0
+  return { totalMins, basePay, holidayPay, leavePay, paidLeaveDays, unpaidDays, totalPay: basePay + holidayPay + leavePay, workDays }
 }
 
 function downloadPayslipCsv(
@@ -88,12 +101,18 @@ function downloadPayslipCsv(
   lines.push(row('근무 상세'))
   lines.push(row('날짜', '출근', '퇴근', '근무시간(분)'))
   for (const r of entry.records) {
-    lines.push(row(
-      r.clock_in.slice(0, 10),
-      r.clock_in.slice(11, 16),
-      r.clock_out?.slice(11, 16) ?? '-',
-      r.duration_minutes ?? 0,
-    ))
+    if (r.segments && r.segments.length > 0) {
+      for (const s of r.segments) {
+        lines.push(row(s.date, s.from, s.to, s.mins))
+      }
+    } else {
+      lines.push(row(
+        r.clock_in.slice(0, 10),
+        r.clock_in.slice(11, 16),
+        r.clock_out?.slice(11, 16) ?? '-',
+        r.duration_minutes ?? 0,
+      ))
+    }
   }
   lines.push('')
   lines.push(row('근무일수', adj.workDays))
@@ -121,15 +140,21 @@ function openPayslip(
   businessName: string
 ) {
   const issueDate = new Date().toLocaleDateString('ko-KR')
-  const recordRows = entry.records.map(r => {
-    const mins = r.duration_minutes ?? 0
-    const dur = fmtDuration(mins)
-    return `<tr>
+  const recordRows = entry.records.flatMap(r => {
+    if (r.segments && r.segments.length > 0) {
+      return r.segments.map(s => `<tr>
+        <td>${s.date}</td>
+        <td>${s.from}</td>
+        <td>${s.to}</td>
+        <td>${fmtDuration(s.mins)}</td>
+      </tr>`)
+    }
+    return [`<tr>
       <td>${r.clock_in.slice(0, 10)}</td>
       <td>${r.clock_in.slice(11, 16)}</td>
       <td>${r.clock_out?.slice(11, 16) ?? '-'}</td>
-      <td>${dur}</td>
-    </tr>`
+      <td>${fmtDuration(r.duration_minutes ?? 0)}</td>
+    </tr>`]
   }).join('')
 
   const html = `<!DOCTYPE html>
@@ -301,7 +326,7 @@ export default function PayrollPage() {
   const adjustedData = data.map(e => {
     const payOn = (employees.find(emp => emp.id === e.employee_id)?.pay_enabled ?? 1) === 1
     const baseAdj = getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true)
-    const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, totalPay: 0 }
+    const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, leavePay: 0, totalPay: 0 }
     return { entry: e, adj, payOn }
   })
   const totalPay = adjustedData.reduce((s, { adj }) => s + adj.totalPay, 0)
@@ -458,6 +483,11 @@ export default function PayrollPage() {
                       <div className={`text-xs ${holidayOn && adj.holidayPay > 0 ? 'text-green-500' : 'text-gray-400'}`}>
                         주휴수당 {holidayOn ? adj.holidayPay.toLocaleString() : 0}원
                       </div>
+                      {adj.leavePay > 0 && (
+                        <div className="text-xs text-emerald-600">
+                          🏖 연차 {adj.paidLeaveDays}일 ({adj.leavePay.toLocaleString()}원)
+                        </div>
+                      )}
                       <div className="text-xs text-green-600">3.3% 제외 ({Math.floor(adj.totalPay * 0.967).toLocaleString()}원)</div>
                     </div>
                   ) : (
@@ -473,14 +503,24 @@ export default function PayrollPage() {
                 <details className="mt-3">
                   <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">상세 내역 보기</summary>
                   <div className="mt-2 flex flex-col gap-1">
-                    {entry.records.map((r) => (
-                      <div key={r.id} className="flex justify-between text-xs text-gray-500 py-1 border-b border-gray-50">
-                        <span>{r.clock_in.slice(0, 10)} {r.clock_in.slice(11, 16)}~{r.clock_out?.slice(11, 16)}</span>
-                        <span className="font-semibold text-green-600">
-                          {r.duration_minutes !== undefined ? fmtDuration(r.duration_minutes) : '-'}
-                        </span>
-                      </div>
-                    ))}
+                    {entry.records.flatMap((r, ri) => {
+                      if (r.segments && r.segments.length > 0) {
+                        return r.segments.map((s, si) => (
+                          <div key={`${r.id}-${si}`} className="flex justify-between text-xs text-gray-500 py-1 border-b border-gray-50">
+                            <span>{s.date} {s.from}~{s.to}{r.segments && r.segments.length > 1 && <span className="ml-1 text-indigo-500">🌙</span>}</span>
+                            <span className="font-semibold text-green-600">{fmtDuration(s.mins)}</span>
+                          </div>
+                        ))
+                      }
+                      return [(
+                        <div key={`${r.id}-r${ri}`} className="flex justify-between text-xs text-gray-500 py-1 border-b border-gray-50">
+                          <span>{r.clock_in.slice(0, 10)} {r.clock_in.slice(11, 16)}~{r.clock_out?.slice(11, 16)}</span>
+                          <span className="font-semibold text-green-600">
+                            {r.duration_minutes !== undefined ? fmtDuration(r.duration_minutes) : '-'}
+                          </span>
+                        </div>
+                      )]
+                    })}
                   </div>
                 </details>
 

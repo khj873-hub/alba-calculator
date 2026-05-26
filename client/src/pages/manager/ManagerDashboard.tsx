@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, setBusinessLocation, getStoredToken,
-  regenerateEmployeeToken, buildEmployeeLink, updateHomeMode,
+  regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getCurrentPosition } from '../../utils/geo'
-import type { Employee, Business, HomeMode } from '../../types'
+import type { Employee, Business, HomeMode, LeavePayCalcMode } from '../../types'
 
 function formatElapsed(clockInStr: string) {
   const diff = Math.floor((Date.now() - new Date(clockInStr).getTime()) / 1000)
@@ -29,6 +29,13 @@ export default function ManagerDashboard() {
   const [homeModeSaving, setHomeModeSaving] = useState(false)
   const [showHomeModeForm, setShowHomeModeForm] = useState(false)
 
+  // 휴가 정책
+  const [timeOffEnabled, setTimeOffEnabled] = useState<boolean>(false)
+  const [leaveMode, setLeaveMode] = useState<LeavePayCalcMode>('8hours')
+  const [includeLeaveInWeekly, setIncludeLeaveInWeekly] = useState<boolean>(true)
+  const [leavePolicySaving, setLeavePolicySaving] = useState(false)
+  const [showLeavePolicyForm, setShowLeavePolicyForm] = useState(false)
+
   // 위치 설정
   const [showLocationForm, setShowLocationForm] = useState(false)
   const [locationPin, setLocationPin] = useState('')
@@ -44,6 +51,9 @@ export default function ManagerDashboard() {
       setBusiness(biz)
       setHomeModeState(biz.home_mode === 'private' ? 'private' : 'kiosk')
       if (biz.radius_meters) setRadius(biz.radius_meters)
+      setTimeOffEnabled((biz.time_off_enabled ?? 0) === 1)
+      setLeaveMode(biz.leave_pay_calc_mode === 'avg_workhours' ? 'avg_workhours' : '8hours')
+      setIncludeLeaveInWeekly((biz.weekly_holiday_includes_leave ?? 1) === 1)
     } finally { setLoading(false) }
   }, [slug])
 
@@ -84,6 +94,38 @@ export default function ManagerDashboard() {
       await regenerateEmployeeToken(slug, emp.id)
       await load()
     } catch (e: any) { setError(e.message) }
+  }
+
+  const handleToggleTimeOffEnabled = async () => {
+    if (leavePolicySaving) return
+    setLeavePolicySaving(true); setError('')
+    const next = !timeOffEnabled
+    try {
+      await updateLeavePolicy(slug, { time_off_enabled: next })
+      setTimeOffEnabled(next)
+    } catch (e: any) { setError(e.message) }
+    finally { setLeavePolicySaving(false) }
+  }
+
+  const handleSetLeaveMode = async (mode: LeavePayCalcMode) => {
+    if (mode === leaveMode || leavePolicySaving) return
+    setLeavePolicySaving(true); setError('')
+    try {
+      await updateLeavePolicy(slug, { leave_pay_calc_mode: mode })
+      setLeaveMode(mode)
+    } catch (e: any) { setError(e.message) }
+    finally { setLeavePolicySaving(false) }
+  }
+
+  const handleToggleIncludeLeave = async () => {
+    if (leavePolicySaving) return
+    setLeavePolicySaving(true); setError('')
+    const next = !includeLeaveInWeekly
+    try {
+      await updateLeavePolicy(slug, { weekly_holiday_includes_leave: next })
+      setIncludeLeaveInWeekly(next)
+    } catch (e: any) { setError(e.message) }
+    finally { setLeavePolicySaving(false) }
   }
 
   const handleSwitchHomeMode = async (mode: HomeMode) => {
@@ -213,8 +255,103 @@ export default function ManagerDashboard() {
         </div>
       )}
 
-      {/* 홈 화면 모드 */}
+      {/* 휴가 정책 */}
       <div className="mt-8 border-t border-gray-100 pt-6">
+        <button
+          onClick={() => setShowLeavePolicyForm(v => !v)}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
+        >
+          <span>🏖 휴가 정책</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${timeOffEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>
+            {timeOffEnabled ? `사용 · ${leaveMode === '8hours' ? '8시간 환산' : '평균 환산'}` : '미사용'}
+          </span>
+          <span className="ml-auto">{showLeavePolicyForm ? '▲' : '▼'}</span>
+        </button>
+
+        {showLeavePolicyForm && (
+          <div className="mt-4 bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
+            {/* 마스터 토글 */}
+            <button
+              onClick={handleToggleTimeOffEnabled}
+              disabled={leavePolicySaving}
+              className={`text-left rounded-xl p-3 border-2 transition ${
+                timeOffEnabled ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
+              } disabled:opacity-50`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-sm text-gray-800">
+                  휴가 관리 사용
+                </div>
+                <span className={`w-10 h-5 rounded-full relative transition-colors ${timeOffEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${timeOffEnabled ? 'left-5' : 'left-0.5'}`} />
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed mt-1">
+                연차·반차·병가·경조사 등록 기능 사용 여부. 연봉제나 휴가 계산이 필요 없는 사업장은 OFF.
+              </p>
+            </button>
+
+            {timeOffEnabled && (
+              <>
+                <div className="border-t border-gray-200 pt-3">
+                  <div className="text-xs font-semibold text-gray-500 mb-2">유급 연차 1일 환산 방식</div>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => handleSetLeaveMode('8hours')}
+                      disabled={leavePolicySaving}
+                      className={`text-left rounded-xl p-3 border-2 transition ${
+                        leaveMode === '8hours' ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                      } disabled:opacity-50`}
+                    >
+                      <div className="font-bold text-sm text-gray-800 mb-1">
+                        {leaveMode === '8hours' && '✓ '}시급 × 8시간 (근로기준법 기본)
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        연차 1일 = 시급의 8배. 시급 12,000원 → 1일 96,000원
+                      </p>
+                    </button>
+                    <button
+                      onClick={() => handleSetLeaveMode('avg_workhours')}
+                      disabled={leavePolicySaving}
+                      className={`text-left rounded-xl p-3 border-2 transition ${
+                        leaveMode === 'avg_workhours' ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                      } disabled:opacity-50`}
+                    >
+                      <div className="font-bold text-sm text-gray-800 mb-1">
+                        {leaveMode === 'avg_workhours' && '✓ '}평일 평균 근무시간
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        해당 직원의 이번 달 평균 근무시간 × 시급. 짧게 일하는 직원에게 합리적.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 pt-3">
+                  <div className="text-xs font-semibold text-gray-500 mb-2">주휴수당 15시간 카운트</div>
+                  <button
+                    onClick={handleToggleIncludeLeave}
+                    disabled={leavePolicySaving}
+                    className={`w-full text-left rounded-xl p-3 border-2 transition ${
+                      includeLeaveInWeekly ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                    } disabled:opacity-50`}
+                  >
+                    <div className="font-bold text-sm text-gray-800 mb-1">
+                      연차 사용일을 주 15시간 카운트에 {includeLeaveInWeekly ? '포함 ✓' : '제외'}
+                    </div>
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      ON: 근로기준법 기본 (연차일도 일한 것으로 간주) / OFF: 실제 근무일만 카운트
+                    </p>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 홈 화면 모드 */}
+      <div className="mt-6 border-t border-gray-100 pt-6">
         <button
           onClick={() => setShowHomeModeForm(v => !v)}
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"

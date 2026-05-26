@@ -28,13 +28,13 @@ export default async function businessesRoutes(app: FastifyInstance) {
 
   // 전체 사업장 목록 (PIN 미포함)
   app.get('/api/businesses', async () => {
-    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode FROM businesses ORDER BY created_at DESC').all()
+    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled FROM businesses ORDER BY created_at DESC').all()
   })
 
   // 사업장 존재 확인 (PIN 미포함)
   app.get<{ Params: { slug: string } }>(
     '/api/businesses/:slug', async (req, reply) => {
-      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode FROM businesses WHERE slug = ?').get(req.params.slug)
+      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       return biz
     }
@@ -63,6 +63,31 @@ export default async function businessesRoutes(app: FastifyInstance) {
       db.prepare('UPDATE businesses SET lat=?, lng=?, radius_meters=? WHERE slug=?')
         .run(lat ?? null, lng ?? null, radius_meters ?? 300, req.params.slug)
       return { ok: true }
+    }
+  )
+
+  // 휴가 정책 변경 (관리자 세션 인증)
+  app.patch<{ Params: { slug: string }; Body: { leave_pay_calc_mode?: '8hours' | 'avg_workhours'; weekly_holiday_includes_leave?: boolean; time_off_enabled?: boolean } }>(
+    '/api/businesses/:slug/leave-policy', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const { leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled } = req.body
+      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+
+      if (leave_pay_calc_mode != null && leave_pay_calc_mode !== '8hours' && leave_pay_calc_mode !== 'avg_workhours') {
+        return reply.code(400).send({ error: 'leave_pay_calc_mode는 8hours 또는 avg_workhours여야 합니다' })
+      }
+
+      const updates: string[] = []
+      const params: any[] = []
+      if (leave_pay_calc_mode != null) { updates.push('leave_pay_calc_mode = ?'); params.push(leave_pay_calc_mode) }
+      if (weekly_holiday_includes_leave != null) { updates.push('weekly_holiday_includes_leave = ?'); params.push(weekly_holiday_includes_leave ? 1 : 0) }
+      if (time_off_enabled != null) { updates.push('time_off_enabled = ?'); params.push(time_off_enabled ? 1 : 0) }
+      if (updates.length === 0) return reply.code(400).send({ error: '변경할 항목이 없습니다' })
+
+      params.push(req.params.slug)
+      db.prepare(`UPDATE businesses SET ${updates.join(', ')} WHERE slug = ?`).run(...params)
+      const updated = db.prepare('SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
+      return { ok: true, ...updated as object }
     }
   )
 

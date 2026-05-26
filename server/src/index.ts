@@ -8,6 +8,7 @@ import 'dotenv/config'
 import businessesRoutes from './routes/businesses'
 import employeesRoutes from './routes/employees'
 import attendanceRoutes from './routes/attendance'
+import timeOffRoutes from './routes/timeOff'
 import { db, verifyPinHash } from './db'
 
 function nowKST() {
@@ -27,6 +28,7 @@ app.register(cors, {
 app.register(businessesRoutes)
 app.register(employeesRoutes)
 app.register(attendanceRoutes)
+app.register(timeOffRoutes)
 
 app.get('/api/health', async () => ({ ok: true }))
 

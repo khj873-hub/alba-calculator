@@ -1,10 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness } from '../api'
+import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendance, fetchBusiness, fetchTimeOff } from '../api'
 import { useSlug } from '../hooks/useSlug'
 import { getCurrentPosition } from '../utils/geo'
 import { calcWeeklyHolidayPay } from '../utils/pay'
-import type { Employee, AttendanceRecord, Business } from '../types'
+import type { Employee, AttendanceRecord, Business, TimeOffRecord, LeaveType, AttendanceSegment } from '../types'
+import { splitByMidnight } from '../utils/segments'
+
+const LEAVE_LABELS: Record<LeaveType, { label: string; color: string }> = {
+  annual: { label: '연차', color: 'text-emerald-600' },
+  unpaid: { label: '무급', color: 'text-gray-500' },
+  sick: { label: '병가', color: 'text-orange-600' },
+  family: { label: '경조', color: 'text-purple-600' },
+}
 
 function fmtDuration(mins: number) {
   const h = Math.floor(mins / 60)
@@ -15,6 +23,12 @@ function fmtDuration(mins: number) {
 function calcMins(clockIn: string, clockOut: string | null) {
   if (!clockOut) return null
   return Math.max(0, Math.floor((new Date(clockOut).getTime() - new Date(clockIn).getTime()) / 60000))
+}
+
+function segmentsOf(r: AttendanceRecord): AttendanceSegment[] {
+  if (r.segments && r.segments.length > 0) return r.segments
+  if (!r.clock_out) return []
+  return splitByMidnight(r.clock_in, r.clock_out)
 }
 
 function formatElapsed(clockInStr: string) {
@@ -32,6 +46,7 @@ export default function PersonalPage() {
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [business, setBusiness] = useState<Business | null>(null)
   const [records, setRecords] = useState<AttendanceRecord[]>([])
+  const [timeOffs, setTimeOffs] = useState<TimeOffRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [invalid, setInvalid] = useState(false)
   const [acting, setActing] = useState(false)
@@ -59,9 +74,13 @@ export default function PersonalPage() {
       if (!emp) { setInvalid(true); setLoading(false); return }
 
       const today = new Date()
-      const recs = await fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id)
+      const timeOffOn = (biz.time_off_enabled ?? 0) === 1
+      const tasks: Promise<any>[] = [fetchAttendance(slug, today.getFullYear(), today.getMonth() + 1, emp.id)]
+      if (timeOffOn) tasks.push(fetchTimeOff(slug, today.getFullYear(), today.getMonth() + 1, emp.id))
+      const results = await Promise.all(tasks)
       setEmployee(emp)
-      setRecords(recs)
+      setRecords(results[0])
+      setTimeOffs(timeOffOn ? results[1] : [])
     } catch {
       setInvalid(true)
     } finally {
@@ -92,7 +111,11 @@ export default function PersonalPage() {
     finally { setActing(false) }
   }
 
-  const totalMins = records.reduce((s, r) => s + (calcMins(r.clock_in, r.clock_out) ?? 0), 0)
+  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const allSegmentsFlat = records.flatMap(r => segmentsOf(r).map(s => ({ r, s })))
+  const inMonthSegs = allSegmentsFlat.filter(x => x.s.date.startsWith(monthPrefix))
+  const totalMins = inMonthSegs.reduce((s, x) => s + x.s.mins, 0)
+  const dateSet = new Set<string>(inMonthSegs.map(x => x.s.date))
 
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
   if (invalid) {
@@ -118,10 +141,7 @@ export default function PersonalPage() {
 
   const payOn = employee.pay_enabled === 1
   const basePay = payOn ? Math.floor((totalMins / 60) * employee.hourly_rate) : 0
-  const completedRecords = records
-    .filter(r => r.clock_out)
-    .map(r => ({ clock_in: r.clock_in, duration_minutes: calcMins(r.clock_in, r.clock_out) ?? 0 }))
-  const weeklyHolidayPay = payOn ? calcWeeklyHolidayPay(completedRecords, employee.hourly_rate) : 0
+  const weeklyHolidayPay = payOn ? calcWeeklyHolidayPay(inMonthSegs.map(x => x.s), employee.hourly_rate) : 0
   const totalPay = basePay + weeklyHolidayPay
 
   return (
@@ -186,7 +206,7 @@ export default function PersonalPage() {
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
             <div className="text-lg font-extrabold text-gray-800">
-              {new Set(records.map(r => r.clock_in.slice(0, 10))).size}일
+              {dateSet.size}일
             </div>
             <div className="text-xs text-gray-400">근무일</div>
           </div>
@@ -216,24 +236,61 @@ export default function PersonalPage() {
         </div>
       </div>
 
+      {timeOffs.length > 0 && (
+        <div className="mb-4">
+          <div className="text-xs font-bold text-gray-400 mb-2">🏖 이번 달 휴가</div>
+          <div className="flex flex-col gap-2">
+            {timeOffs.map(t => {
+              const meta = LEAVE_LABELS[t.type]
+              return (
+                <div key={t.id} className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 flex justify-between items-center">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600">{t.date}</div>
+                    <div className={`text-xs font-bold ${meta.color}`}>
+                      {meta.label}
+                      {t.portion === 0.5
+                        ? <span> · {t.half_period === 'am' ? '오전 반차' : '오후 반차'}</span>
+                        : <span> · 하루</span>}
+                      {t.memo && <span className="ml-2 text-gray-400 font-normal">({t.memo})</span>}
+                    </div>
+                  </div>
+                  <span className="text-sm font-bold text-emerald-600">{t.portion}일</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="text-xs font-bold text-gray-400 mb-2">최근 출퇴근 기록</div>
       {records.length === 0 ? (
         <div className="text-center py-8 text-gray-300 text-sm">기록이 없습니다</div>
       ) : (
         <div className="flex flex-col gap-2">
-          {records.slice(0, 10).map((r) => {
-            const mins = calcMins(r.clock_in, r.clock_out)
-            return (
-              <div key={r.id} className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex justify-between items-center">
-                <div>
-                  <div className="text-xs font-semibold text-gray-600">{r.clock_in.slice(0, 10)}</div>
-                  <div className="text-xs text-gray-400">
-                    {r.clock_in.slice(11, 16)} ~ {r.clock_out ? r.clock_out.slice(11, 16) : '근무 중'}
+          {records.slice(0, 10).flatMap((r) => {
+            if (!r.clock_out) {
+              return [(
+                <div key={`r${r.id}`} className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex justify-between items-center">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600">{r.clock_in.slice(0, 10)}</div>
+                    <div className="text-xs text-gray-400">{r.clock_in.slice(11, 16)} ~ 근무 중</div>
                   </div>
                 </div>
-                {mins !== null && <span className="text-sm font-bold text-green-600">{fmtDuration(mins)}</span>}
+              )]
+            }
+            const segs = segmentsOf(r)
+            return segs.map((s, idx) => (
+              <div key={`r${r.id}-${idx}`} className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex justify-between items-center">
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+                    {s.date}
+                    {segs.length > 1 && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">{idx === 0 ? '🌙 야간 →' : '← 익일'}</span>}
+                  </div>
+                  <div className="text-xs text-gray-400">{s.from} ~ {s.to}</div>
+                </div>
+                <span className="text-sm font-bold text-green-600">{fmtDuration(s.mins)}</span>
               </div>
-            )
+            ))
           })}
         </div>
       )}
