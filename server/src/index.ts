@@ -9,6 +9,8 @@ import businessesRoutes from './routes/businesses'
 import employeesRoutes from './routes/employees'
 import attendanceRoutes from './routes/attendance'
 import timeOffRoutes from './routes/timeOff'
+import oauthRoutes from './routes/oauth'
+import adminRoutes from './routes/admin'
 import { db, verifyPinHash } from './db'
 
 function nowKST() {
@@ -29,6 +31,8 @@ app.register(businessesRoutes)
 app.register(employeesRoutes)
 app.register(attendanceRoutes)
 app.register(timeOffRoutes)
+app.register(oauthRoutes)
+app.register(adminRoutes)
 
 app.get('/api/health', async () => ({ ok: true }))
 

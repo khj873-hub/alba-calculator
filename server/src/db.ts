@@ -37,6 +37,19 @@ db.exec(`
     slug TEXT NOT NULL,
     expires_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL CHECK(provider IN ('google','kakao')),
+    provider_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    name TEXT,
+    picture_url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    last_login_at TEXT,
+    UNIQUE(provider, provider_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 `)
 
 // businesses 테이블 생성
@@ -99,6 +112,9 @@ const migrate = db.transaction(() => {
   }
   if (!bizColsV3.find((c: any) => c.name === 'time_off_enabled')) {
     db.exec('ALTER TABLE businesses ADD COLUMN time_off_enabled INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!bizColsV3.find((c: any) => c.name === 'owner_user_id')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN owner_user_id INTEGER REFERENCES users(id)')
   }
   // time_off 테이블이 구 스키마(half_period NULL 허용)면 신 스키마로 재생성
   const toExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='time_off'").get() as any

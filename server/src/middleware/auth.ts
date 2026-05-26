@@ -20,3 +20,10 @@ export async function requireManagerAuth(req: FastifyRequest, reply: FastifyRepl
     return reply.code(401).send({ error: '관리자 인증이 필요합니다' })
   }
 }
+
+export async function requireAdminAuth(req: FastifyRequest, reply: FastifyReply) {
+  const token = req.headers['x-session-token'] as string
+  if (!token || !getValidSession('__admin__', token)) {
+    return reply.code(401).send({ error: '운영자 인증이 필요합니다' })
+  }
+}

@@ -8,5 +8,9 @@ data/
 *.db-shm
 *.db-wal
 .env
+.env.*
 server/.env
+server/.env.*
+!.env.example
+!server/.env.example
 .DS_Store
