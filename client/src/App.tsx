@@ -12,6 +12,7 @@ import ManagerDashboard from './pages/manager/ManagerDashboard'
 import ManagerAttendancePage from './pages/manager/ManagerAttendancePage'
 import ManagerPayrollPage from './pages/manager/ManagerPayrollPage'
 import EmployeeFormPage from './pages/manager/EmployeeFormPage'
+import AdminPage from './pages/AdminPage'
 
 export default function App() {
   return (
@@ -22,6 +23,9 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/create" element={<CreateBusinessPage />} />
           <Route path="/businesses" element={<BusinessListPage />} />
+
+          {/* 운영자 콘솔 */}
+          <Route path="/admin" element={<AdminPage />} />
 
           {/* 직원 영역 — 사업장 home_mode에 따라 키오스크/개인 링크 모드 */}
           <Route element={<EmployeeLayout />}>
