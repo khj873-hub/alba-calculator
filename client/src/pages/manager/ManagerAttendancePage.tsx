@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { fetchEmployees, fetchAttendance, deleteAttendance, updateAttendance, fetchTimeOff, createTimeOff, deleteTimeOff, fetchBusiness } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
-import type { Employee, AttendanceRecord, TimeOffRecord, LeaveType, HalfPeriod } from '../../types'
+import type { Employee, AttendanceRecord, TimeOffRecord, LeaveType, HalfPeriod, AttendanceSegment } from '../../types'
+import { splitByMidnight } from '../../utils/segments'
 
 function fmtDuration(mins: number) {
   const h = Math.floor(mins / 60)
@@ -12,6 +13,13 @@ function fmtDuration(mins: number) {
 function calcMins(clockIn: string, clockOut: string | null) {
   if (!clockOut) return null
   return Math.floor((new Date(clockOut).getTime() - new Date(clockIn).getTime()) / 60000)
+}
+
+// 서버가 segments를 못 채워 보낸 (구버전 호환) 경우 클라이언트가 fallback 분할
+function segmentsOf(r: AttendanceRecord): AttendanceSegment[] {
+  if (r.segments && r.segments.length > 0) return r.segments
+  if (!r.clock_out) return []
+  return splitByMidnight(r.clock_in, r.clock_out)
 }
 
 const LEAVE_TYPE_LABELS: Record<LeaveType, { label: string; color: string; bg: string }> = {
@@ -201,11 +209,28 @@ export default function AttendancePage() {
   const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1) } else setMonth(m => m + 1) }
 
-  const totalMins = records.reduce((s, r) => s + (calcMins(r.clock_in, r.clock_out) ?? 0), 0)
+  // 모든 record를 segments로 펼침. 진행 중 근무(clock_out=null)는 segment 없이 별도 처리
+  const expanded: Array<{ record: AttendanceRecord; seg: AttendanceSegment | null }> = []
+  for (const r of records) {
+    if (!r.clock_out) {
+      expanded.push({ record: r, seg: null })
+    } else {
+      for (const s of segmentsOf(r)) expanded.push({ record: r, seg: s })
+    }
+  }
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}`
 
-  // 날짜별로 출근기록 + 휴가 묶기
+  const totalMins = expanded.reduce((s, x) => {
+    if (x.seg) return s + (x.seg.date.startsWith(monthPrefix) ? x.seg.mins : 0)
+    return s + (calcMins(x.record.clock_in, x.record.clock_out) ?? 0)
+  }, 0)
+
+  // 날짜별 그룹 — segment 기준
   const allDates = new Set<string>()
-  for (const r of records) allDates.add(r.clock_in.slice(0, 10))
+  for (const x of expanded) {
+    const d = x.seg ? x.seg.date : x.record.clock_in.slice(0, 10)
+    if (d.startsWith(monthPrefix)) allDates.add(d)
+  }
   for (const t of timeOffs) allDates.add(t.date)
   const sortedDates = Array.from(allDates).sort().reverse()
 
@@ -258,9 +283,9 @@ export default function AttendancePage() {
       ) : (
         <div className="flex flex-col gap-4">
           {sortedDates.map((date) => {
-            const recs = records.filter(r => r.clock_in.slice(0, 10) === date)
+            const dayItems = expanded.filter(x => (x.seg ? x.seg.date : x.record.clock_in.slice(0, 10)) === date)
             const tos = timeOffs.filter(t => t.date === date)
-            const dayMins = recs.reduce((s, r) => s + (calcMins(r.clock_in, r.clock_out) ?? 0), 0)
+            const dayMins = dayItems.reduce((s, x) => s + (x.seg ? x.seg.mins : (calcMins(x.record.clock_in, x.record.clock_out) ?? 0)), 0)
             return (
               <div key={date}>
                 <div className="flex items-center justify-between mb-2">
@@ -290,10 +315,16 @@ export default function AttendancePage() {
                       </div>
                     )
                   })}
-                  {recs.map((r) => {
-                    const mins = calcMins(r.clock_in, r.clock_out)
+                  {dayItems.map((x, idx) => {
+                    const r = x.record
+                    const seg = x.seg
+                    const isOngoing = !r.clock_out
+                    const allSegs = isOngoing ? [] : segmentsOf(r)
+                    const isFirstSeg = seg ? seg === allSegs[0] : true
+                    const isLastSeg = seg ? seg === allSegs[allSegs.length - 1] : true
+                    const isNightSpan = allSegs.length > 1
                     return (
-                      <div key={r.id} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+                      <div key={`${r.id}-${idx}`} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
                         {editId === r.id ? (
                           <div className="flex flex-col gap-2">
                             <div className="flex gap-2 items-center text-xs text-gray-500">
@@ -320,15 +351,24 @@ export default function AttendancePage() {
                                 style={{ background: r.color }}>{r.employee_name?.[0]}</div>
                             )}
                             <div className="flex-1 min-w-0">
-                              {r.employee_name && <div className="text-xs font-semibold text-gray-700 mb-0.5">{r.employee_name}</div>}
+                              {r.employee_name && <div className="text-xs font-semibold text-gray-700 mb-0.5 flex items-center gap-1">
+                                {r.employee_name}
+                                {isNightSpan && (
+                                  <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">
+                                    {isFirstSeg ? '🌙 야간 →' : '← 익일'}
+                                  </span>
+                                )}
+                              </div>}
                               <div className="text-xs text-gray-500">
-                                {r.clock_in.slice(11, 16)} ~ {r.clock_out ? r.clock_out.slice(11, 16) : '근무 중'}
-                                {mins !== null && <span className="ml-2 font-semibold text-green-600">{fmtDuration(mins)}</span>}
+                                {seg
+                                  ? <>{seg.from} ~ {seg.to}</>
+                                  : <>{r.clock_in.slice(11, 16)} ~ 근무 중</>}
+                                {seg && <span className="ml-2 font-semibold text-green-600">{fmtDuration(seg.mins)}</span>}
                               </div>
                             </div>
                             <div className="flex gap-1">
-                              <button onClick={() => startEdit(r)} className="text-gray-300 hover:text-gray-500 p-1">✏️</button>
-                              <button onClick={() => handleDelete(r.id)} className="text-gray-300 hover:text-red-400 p-1">🗑</button>
+                              {isFirstSeg && <button onClick={() => startEdit(r)} className="text-gray-300 hover:text-gray-500 p-1">✏️</button>}
+                              {isLastSeg && <button onClick={() => handleDelete(r.id)} className="text-gray-300 hover:text-red-400 p-1">🗑</button>}
                             </div>
                           </div>
                         )}

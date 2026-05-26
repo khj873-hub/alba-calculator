@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db } from '../db'
 import { requireManagerAuth, getValidSession } from '../middleware/auth'
+import { splitByMidnight } from '../utils/segments'
 
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -117,25 +118,33 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const { employee_id, year, month } = req.query
       const prefix = `${year}-${String(month).padStart(2, '0')}`
 
+      const addSegments = (rows: any[]) => rows.map(r => ({
+        ...r,
+        segments: r.clock_out ? splitByMidnight(r.clock_in, r.clock_out) : [],
+      }))
+
+      // 월 경계(예: 5/31 22:00 ~ 6/1 06:00) 근무도 양쪽 월에서 조회되도록 clock_in/clock_out 모두 매칭
       if (employee_id) {
         if (!verifyEmployee(slug, Number(employee_id)))
           return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
-        return db.prepare(`
+        const rows = db.prepare(`
           SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
           FROM attendance a JOIN employees e ON e.id = a.employee_id
-          WHERE a.employee_id = ? AND a.clock_in LIKE ?
+          WHERE a.employee_id = ? AND (a.clock_in LIKE ? OR a.clock_out LIKE ?)
           ORDER BY a.clock_in DESC
-        `).all(Number(employee_id), `${prefix}%`)
+        `).all(Number(employee_id), `${prefix}%`, `${prefix}%`) as any[]
+        return addSegments(rows)
       }
 
-      return db.prepare(`
+      const rows = db.prepare(`
         SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
         FROM attendance a
         JOIN employees e ON e.id = a.employee_id
         JOIN businesses b ON b.id = e.business_id
-        WHERE b.slug = ? AND a.clock_in LIKE ?
+        WHERE b.slug = ? AND (a.clock_in LIKE ? OR a.clock_out LIKE ?)
         ORDER BY a.clock_in DESC
-      `).all(slug, `${prefix}%`)
+      `).all(slug, `${prefix}%`, `${prefix}%`) as any[]
+      return addSegments(rows)
     }
   )
 
@@ -155,14 +164,15 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const leaveMode: '8hours' | 'avg_workhours' = biz.leave_pay_calc_mode === 'avg_workhours' ? 'avg_workhours' : '8hours'
       const includeLeaveInWeekly: boolean = timeOffEnabled && biz.weekly_holiday_includes_leave === 1
 
+      // payroll도 월 경계 근무 양쪽 월에서 잡히도록
       const records = db.prepare(`
         SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
         FROM attendance a
         JOIN employees e ON e.id = a.employee_id
         JOIN businesses b ON b.id = e.business_id
-        WHERE b.slug = ? AND a.clock_in LIKE ? AND a.clock_out IS NOT NULL
+        WHERE b.slug = ? AND (a.clock_in LIKE ? OR a.clock_out LIKE ?) AND a.clock_out IS NOT NULL
         ORDER BY e.id, a.clock_in
-      `).all(slug, `${prefix}%`) as any[]
+      `).all(slug, `${prefix}%`, `${prefix}%`) as any[]
 
       const timeOffRows = timeOffEnabled
         ? db.prepare(`
@@ -191,9 +201,12 @@ export default async function attendanceRoutes(app: FastifyInstance) {
           })
         }
         const entry = map.get(r.employee_id)
-        const mins = Math.max(0, Math.floor((new Date(r.clock_out).getTime() - new Date(r.clock_in).getTime()) / 60000))
+        const allSegments = splitByMidnight(r.clock_in, r.clock_out)
+        // 해당 월에 속한 segment만 카운트 (월 경계 근무 중복 방지)
+        const segments = allSegments.filter(s => s.date.startsWith(prefix))
+        const mins = segments.reduce((s, seg) => s + seg.mins, 0)
         entry.total_minutes += mins
-        entry.records.push({ ...r, duration_minutes: mins })
+        entry.records.push({ ...r, duration_minutes: mins, segments })
       }
 
       // time_off 합산 (출근기록이 없는 직원도 포함될 수 있으므로 직원 메타가 필요)
@@ -242,11 +255,13 @@ export default async function attendanceRoutes(app: FastifyInstance) {
           }
         }
 
-        // 주차별 분 집계 (출근 + 유급 연차[설정 시])
+        // 주차별 분 집계 — segment 단위로 분할해 주차 키 산출 (자정 넘는 근무 정확 반영)
         const weekMap = new Map<string, number>()
         for (const r of e.records) {
-          const wk = getWeekKey(r.clock_in)
-          weekMap.set(wk, (weekMap.get(wk) ?? 0) + r.duration_minutes)
+          for (const seg of (r.segments as { date: string; mins: number }[])) {
+            const wk = getWeekKey(seg.date + 'T00:00:00')
+            weekMap.set(wk, (weekMap.get(wk) ?? 0) + seg.mins)
+          }
         }
         if (includeLeaveInWeekly) {
           for (const t of e.time_off) {

@@ -4,7 +4,8 @@ import { fetchEmployees, fetchEmployeeByToken, clockIn, clockOut, fetchAttendanc
 import { useSlug } from '../hooks/useSlug'
 import { getCurrentPosition } from '../utils/geo'
 import { calcWeeklyHolidayPay } from '../utils/pay'
-import type { Employee, AttendanceRecord, Business, TimeOffRecord, LeaveType } from '../types'
+import type { Employee, AttendanceRecord, Business, TimeOffRecord, LeaveType, AttendanceSegment } from '../types'
+import { splitByMidnight } from '../utils/segments'
 
 const LEAVE_LABELS: Record<LeaveType, { label: string; color: string }> = {
   annual: { label: '연차', color: 'text-emerald-600' },
@@ -22,6 +23,12 @@ function fmtDuration(mins: number) {
 function calcMins(clockIn: string, clockOut: string | null) {
   if (!clockOut) return null
   return Math.max(0, Math.floor((new Date(clockOut).getTime() - new Date(clockIn).getTime()) / 60000))
+}
+
+function segmentsOf(r: AttendanceRecord): AttendanceSegment[] {
+  if (r.segments && r.segments.length > 0) return r.segments
+  if (!r.clock_out) return []
+  return splitByMidnight(r.clock_in, r.clock_out)
 }
 
 function formatElapsed(clockInStr: string) {
@@ -104,7 +111,11 @@ export default function PersonalPage() {
     finally { setActing(false) }
   }
 
-  const totalMins = records.reduce((s, r) => s + (calcMins(r.clock_in, r.clock_out) ?? 0), 0)
+  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const allSegmentsFlat = records.flatMap(r => segmentsOf(r).map(s => ({ r, s })))
+  const inMonthSegs = allSegmentsFlat.filter(x => x.s.date.startsWith(monthPrefix))
+  const totalMins = inMonthSegs.reduce((s, x) => s + x.s.mins, 0)
+  const dateSet = new Set<string>(inMonthSegs.map(x => x.s.date))
 
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
   if (invalid) {
@@ -130,10 +141,7 @@ export default function PersonalPage() {
 
   const payOn = employee.pay_enabled === 1
   const basePay = payOn ? Math.floor((totalMins / 60) * employee.hourly_rate) : 0
-  const completedRecords = records
-    .filter(r => r.clock_out)
-    .map(r => ({ clock_in: r.clock_in, duration_minutes: calcMins(r.clock_in, r.clock_out) ?? 0 }))
-  const weeklyHolidayPay = payOn ? calcWeeklyHolidayPay(completedRecords, employee.hourly_rate) : 0
+  const weeklyHolidayPay = payOn ? calcWeeklyHolidayPay(inMonthSegs.map(x => x.s), employee.hourly_rate) : 0
   const totalPay = basePay + weeklyHolidayPay
 
   return (
@@ -198,7 +206,7 @@ export default function PersonalPage() {
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
             <div className="text-lg font-extrabold text-gray-800">
-              {new Set(records.map(r => r.clock_in.slice(0, 10))).size}일
+              {dateSet.size}일
             </div>
             <div className="text-xs text-gray-400">근무일</div>
           </div>
@@ -259,19 +267,30 @@ export default function PersonalPage() {
         <div className="text-center py-8 text-gray-300 text-sm">기록이 없습니다</div>
       ) : (
         <div className="flex flex-col gap-2">
-          {records.slice(0, 10).map((r) => {
-            const mins = calcMins(r.clock_in, r.clock_out)
-            return (
-              <div key={r.id} className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex justify-between items-center">
-                <div>
-                  <div className="text-xs font-semibold text-gray-600">{r.clock_in.slice(0, 10)}</div>
-                  <div className="text-xs text-gray-400">
-                    {r.clock_in.slice(11, 16)} ~ {r.clock_out ? r.clock_out.slice(11, 16) : '근무 중'}
+          {records.slice(0, 10).flatMap((r) => {
+            if (!r.clock_out) {
+              return [(
+                <div key={`r${r.id}`} className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex justify-between items-center">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-600">{r.clock_in.slice(0, 10)}</div>
+                    <div className="text-xs text-gray-400">{r.clock_in.slice(11, 16)} ~ 근무 중</div>
                   </div>
                 </div>
-                {mins !== null && <span className="text-sm font-bold text-green-600">{fmtDuration(mins)}</span>}
+              )]
+            }
+            const segs = segmentsOf(r)
+            return segs.map((s, idx) => (
+              <div key={`r${r.id}-${idx}`} className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex justify-between items-center">
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+                    {s.date}
+                    {segs.length > 1 && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">{idx === 0 ? '🌙 야간 →' : '← 익일'}</span>}
+                  </div>
+                  <div className="text-xs text-gray-400">{s.from} ~ {s.to}</div>
+                </div>
+                <span className="text-sm font-bold text-green-600">{fmtDuration(s.mins)}</span>
               </div>
-            )
+            ))
           })}
         </div>
       )}

@@ -7,13 +7,13 @@ export function getWeekKey(dateStr: string): string {
 }
 
 export function calcWeeklyHolidayPay(
-  records: { clock_in: string; duration_minutes: number }[],
+  segments: { date: string; mins: number }[],
   hourlyRate: number
 ): number {
   const weekMap = new Map<string, number>()
-  for (const r of records) {
-    const wk = getWeekKey(r.clock_in)
-    weekMap.set(wk, (weekMap.get(wk) ?? 0) + r.duration_minutes)
+  for (const s of segments) {
+    const wk = getWeekKey(s.date + 'T00:00:00')
+    weekMap.set(wk, (weekMap.get(wk) ?? 0) + s.mins)
   }
   let total = 0
   for (const weekMins of weekMap.values()) {

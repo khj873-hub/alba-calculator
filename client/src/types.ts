@@ -43,6 +43,13 @@ export interface Employee {
   clock_in: string | null
 }
 
+export interface AttendanceSegment {
+  date: string  // YYYY-MM-DD
+  from: string  // HH:MM
+  to: string    // HH:MM (자정은 '24:00')
+  mins: number
+}
+
 export interface AttendanceRecord {
   id: number
   employee_id: number
@@ -53,6 +60,7 @@ export interface AttendanceRecord {
   clock_out: string | null
   memo?: string | null
   duration_minutes?: number
+  segments?: AttendanceSegment[]
 }
 
 export interface PayrollEntry {
