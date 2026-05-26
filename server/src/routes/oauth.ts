@@ -56,6 +56,14 @@ export default async function oauthRoutes(app: FastifyInstance) {
     const slug = (req.query.slug || '').trim()
     if (!isAdmin && !slug) return reply.code(400).send({ error: 'slug 또는 admin=1 필요' })
 
+    // 매니저 흐름 — 정지된 사업장은 OAuth 자체 거부
+    if (!isAdmin && slug) {
+      const biz = db.prepare('SELECT is_active FROM businesses WHERE slug = ?').get(slug) as any
+      if (biz && biz.is_active === 0) {
+        return reply.code(403).send({ error: 'service_suspended', message: '서비스 이용이 일시 제한되었습니다.' })
+      }
+    }
+
     pruneStates()
     const state = randomBytes(16).toString('hex')
     stateStore.set(state, { slug: isAdmin ? undefined : slug, admin: isAdmin, createdAt: Date.now() })

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchBusiness } from '../api'
+import { fetchBusiness, ServiceSuspendedError } from '../api'
 
 const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfqabZynjYejxaNUbJoCAL1LmBFZh5a1lCF4WudjaNvFEtVkg/viewform'
 
@@ -20,8 +20,9 @@ export default function LandingPage() {
     try {
       await fetchBusiness(slug)
       navigate(`/${slug}`)
-    } catch {
-      setError('존재하지 않는 사업장 코드입니다')
+    } catch (e: any) {
+      if (e instanceof ServiceSuspendedError) navigate(`/${slug}`)  // 정지 안내 페이지 노출
+      else setError('존재하지 않는 사업장 코드입니다')
     } finally {
       setLoading(false)
     }

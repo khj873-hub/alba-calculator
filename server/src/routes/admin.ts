@@ -17,6 +17,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   app.get('/api/admin/businesses', { preHandler: requireAdminAuth }, async () => {
     return db.prepare(`
       SELECT b.id, b.slug, b.name, b.created_at, b.time_off_enabled,
+             b.is_active, b.suspended_at,
              u.id AS owner_user_id, u.email AS owner_email, u.name AS owner_name,
              u.last_login_at AS owner_last_login,
              (SELECT COUNT(*) FROM employees WHERE business_id = b.id) AS employee_count
@@ -25,6 +26,21 @@ export default async function adminRoutes(app: FastifyInstance) {
       ORDER BY b.created_at DESC
     `).all()
   })
+
+  // 사업장 활성/정지 토글
+  app.patch<{ Params: { slug: string }; Body: { is_active: boolean } }>(
+    '/api/admin/businesses/:slug/status', { preHandler: requireAdminAuth }, async (req, reply) => {
+      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장 없음' })
+      const active = req.body.is_active ? 1 : 0
+      const suspendedAt = active === 0
+        ? new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+        : null
+      db.prepare('UPDATE businesses SET is_active = ?, suspended_at = ? WHERE slug = ?')
+        .run(active, suspendedAt, req.params.slug)
+      return { ok: true, is_active: active, suspended_at: suspendedAt }
+    }
+  )
 
   // 2) 신규 사업장 프로비저닝 — 사업장 생성 + owner 매핑 한 번에
   app.post<{ Body: { name: string; manager_pin: string; owner_email: string } }>(

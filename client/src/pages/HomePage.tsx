@@ -1,20 +1,26 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchEmployees, fetchBusiness } from '../api'
+import { fetchEmployees, fetchBusiness, ServiceSuspendedError } from '../api'
 import { useSlug } from '../hooks/useSlug'
+import SuspendedNotice from '../components/SuspendedNotice'
 import type { Employee } from '../types'
 
 export default function HomePage() {
   const navigate = useNavigate()
   const slug = useSlug()
   const [mode, setMode] = useState<'kiosk' | 'private' | null>(null)
+  const [suspended, setSuspended] = useState(false)
 
   useEffect(() => {
     fetchBusiness(slug)
       .then(biz => setMode(biz.home_mode === 'private' ? 'private' : 'kiosk'))
-      .catch(() => setMode('kiosk'))
+      .catch(e => {
+        if (e instanceof ServiceSuspendedError) setSuspended(true)
+        else setMode('kiosk')
+      })
   }, [slug])
 
+  if (suspended) return <SuspendedNotice slug={slug} />
   if (mode === null) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
   if (mode === 'private') return <PrivateGuide slug={slug} navigate={navigate} />
   return <KioskList slug={slug} navigate={navigate} />

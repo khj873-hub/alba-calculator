@@ -27,6 +27,35 @@ app.register(cors, {
   origin: isProd ? (process.env.ALLOWED_ORIGIN || true) : ['http://localhost:5173', 'http://localhost:5174']
 })
 
+// 사업장 정지(is_active=0) 시 사장·직원 API 차단. 어드민·OAuth·health는 화이트리스트.
+app.addHook('onRequest', async (req, reply) => {
+  const url = req.url.split('?')[0]
+  if (!url.startsWith('/api/')) return
+  if (url === '/api/health') return
+  if (url.startsWith('/api/admin/')) return
+  if (url.startsWith('/api/auth/')) return
+  // 사업장 신규 생성·전체 목록은 정지와 무관
+  if (url === '/api/businesses') return
+
+  // 슬러그 추출: /api/businesses/:slug/... 또는 /api/:slug/...
+  let slug: string | null = null
+  const m1 = url.match(/^\/api\/businesses\/([a-zA-Z0-9_-]+)/)
+  if (m1) slug = m1[1]
+  else {
+    const m2 = url.match(/^\/api\/([a-zA-Z0-9_-]+)\//)
+    if (m2 && !['businesses', 'admin', 'auth', 'health'].includes(m2[1])) slug = m2[1]
+  }
+  if (!slug) return
+
+  const biz = db.prepare('SELECT is_active FROM businesses WHERE slug = ?').get(slug) as any
+  if (biz && biz.is_active === 0) {
+    return reply.code(403).send({
+      error: 'service_suspended',
+      message: '서비스 이용이 일시 제한되었습니다. 운영자에게 문의해주세요. (khj873@jinusoft.com)',
+    })
+  }
+})
+
 app.register(businessesRoutes)
 app.register(employeesRoutes)
 app.register(attendanceRoutes)

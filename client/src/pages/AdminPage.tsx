@@ -9,6 +9,8 @@ interface AdminBiz {
   name: string
   created_at: string
   time_off_enabled: number
+  is_active: number
+  suspended_at: string | null
   owner_user_id: number | null
   owner_email: string | null
   owner_name: string | null
@@ -122,6 +124,22 @@ export default function AdminPage() {
     } catch (e: any) { alert(`해제 실패: ${e.message}`) }
   }
 
+  const handleToggleActive = async (b: AdminBiz) => {
+    const next = b.is_active === 1 ? 0 : 1
+    const action = next === 0 ? '정지' : '활성화'
+    const msg = next === 0
+      ? `'${b.name}' 사업장을 정지하시겠어요?\n사장님·직원이 모두 접근 불가합니다. 결제 정산 후 다시 활성화하세요.`
+      : `'${b.name}' 사업장을 다시 활성화하시겠어요?`
+    if (!confirm(msg)) return
+    try {
+      await adminApi(`/admin/businesses/${b.slug}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: next === 1 }),
+      })
+      await load()
+    } catch (e: any) { alert(`${action} 실패: ${e.message}`) }
+  }
+
   // 비인증 화면
   if (!authed) {
     const errParam = searchParams.get('oauth_error')
@@ -208,6 +226,7 @@ export default function AdminPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500">
                 <tr>
+                  <th className="text-left px-4 py-3">상태</th>
                   <th className="text-left px-4 py-3">slug</th>
                   <th className="text-left px-4 py-3">사업장명</th>
                   <th className="text-left px-4 py-3">직원</th>
@@ -217,7 +236,20 @@ export default function AdminPage() {
               </thead>
               <tbody>
                 {bizList.map(b => (
-                  <tr key={b.slug} className="border-t border-gray-100">
+                  <tr key={b.slug} className={`border-t border-gray-100 ${b.is_active === 0 ? 'bg-red-50' : ''}`}>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleToggleActive(b)}
+                        className={`text-xs font-bold px-2 py-1 rounded-lg border transition ${
+                          b.is_active === 1
+                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                            : 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200'
+                        }`}
+                        title={b.is_active === 0 && b.suspended_at ? `정지: ${b.suspended_at}` : '클릭해서 상태 변경'}
+                      >
+                        {b.is_active === 1 ? '🟢 활성' : '🔴 정지'}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs">{b.slug}</td>
                     <td className="px-4 py-3 font-semibold">{b.name}</td>
                     <td className="px-4 py-3 text-gray-500">{b.employee_count}</td>
@@ -260,7 +292,7 @@ export default function AdminPage() {
                   </tr>
                 ))}
                 {bizList.length === 0 && (
-                  <tr><td colSpan={5} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
+                  <tr><td colSpan={6} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
                 )}
               </tbody>
             </table>
