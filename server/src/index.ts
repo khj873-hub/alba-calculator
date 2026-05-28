@@ -19,6 +19,9 @@ function nowKST() {
 function expiresKST(hours = 24) {
   return new Date(Date.now() + 9 * 60 * 60 * 1000 + hours * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
 }
+function todayKSTYmd() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
 
 const app = Fastify({ logger: false })
 
@@ -47,12 +50,19 @@ app.addHook('onRequest', async (req, reply) => {
   }
   if (!slug) return
 
-  const biz = db.prepare('SELECT is_active FROM businesses WHERE slug = ?').get(slug) as any
-  if (biz && biz.is_active === 0) {
-    return reply.code(403).send({
-      error: 'service_suspended',
-      message: '서비스 이용이 일시 제한되었습니다. 운영자에게 문의해주세요. (khj873@jinusoft.com)',
-    })
+  const biz = db.prepare('SELECT is_active, plan, plan_expires_at FROM businesses WHERE slug = ?').get(slug) as any
+  if (biz) {
+    // 유료 결제 만료 자동 정지 — 활성 상태 + 유료 + 기한 지남
+    if (biz.is_active === 1 && biz.plan === 'paid' && biz.plan_expires_at && biz.plan_expires_at < todayKSTYmd()) {
+      db.prepare('UPDATE businesses SET is_active = 0, suspended_at = ? WHERE slug = ?').run(nowKST(), slug)
+      biz.is_active = 0
+    }
+    if (biz.is_active === 0) {
+      return reply.code(403).send({
+        error: 'service_suspended',
+        message: '서비스 이용이 일시 제한되었습니다. 운영자에게 문의해주세요. (khj873@jinusoft.com)',
+      })
+    }
   }
 })
 

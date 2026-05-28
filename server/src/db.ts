@@ -127,6 +127,11 @@ const migrate = db.transaction(() => {
   if (!bizColsV3.find((c: any) => c.name === 'plan')) {
     db.exec("ALTER TABLE businesses ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
   }
+  // 유료 결제 만료일: 'YYYY-MM-DD' KST. NULL이면 무기한.
+  // 만료 도달 시 미들웨어가 is_active=0으로 자동 정지
+  if (!bizColsV3.find((c: any) => c.name === 'plan_expires_at')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN plan_expires_at TEXT')
+  }
   // time_off 테이블이 구 스키마(half_period NULL 허용)면 신 스키마로 재생성
   const toExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='time_off'").get() as any
   if (toExists) {
