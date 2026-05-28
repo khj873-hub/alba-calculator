@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 const ADMIN_TOKEN_KEY = 'admin_token'
 
+type Plan = 'free' | 'paid'
+
 interface AdminBiz {
   id: number
   slug: string
@@ -11,11 +13,18 @@ interface AdminBiz {
   time_off_enabled: number
   is_active: number
   suspended_at: string | null
+  plan: Plan
   owner_user_id: number | null
   owner_email: string | null
   owner_name: string | null
   owner_last_login: string | null
   employee_count: number
+}
+
+function fmtDateTime(s: string | null) {
+  if (!s) return '-'
+  // 서버는 datetime('now','localtime')로 'YYYY-MM-DD HH:MM:SS' KST 저장. 분 단위까지 표시
+  return s.length >= 16 ? s.slice(0, 16) : s
 }
 
 function getToken() { return sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? '' }
@@ -91,14 +100,20 @@ export default function AdminPage() {
   useEffect(() => { if (authed) load() }, [authed, load])
 
   const handleCreate = async () => {
-    if (!fName.trim() || !fPin || !fEmail.trim()) { setError('모든 필드 필수'); return }
+    if (!fName.trim() || !fPin) { setError('사업장명·PIN 필수'); return }
+    if (fEmail.trim() && !fEmail.includes('@')) { setError('이메일 형식이 올바르지 않아요 (비우거나 정확히 입력)'); return }
     setCreating(true); setError('')
     try {
       const res: any = await adminApi('/admin/businesses/provision', {
         method: 'POST',
-        body: JSON.stringify({ name: fName.trim(), manager_pin: fPin, owner_email: fEmail.trim() }),
+        body: JSON.stringify({
+          name: fName.trim(),
+          manager_pin: fPin,
+          owner_email: fEmail.trim() || null,
+        }),
       })
-      alert(`✅ 사업장 생성 완료\nURL: ${window.location.origin}/${res.slug}\nPIN: ${fPin}\nOwner: ${res.owner_email}`)
+      const ownerLine = res.owner_email ? `Owner: ${res.owner_email}` : 'Owner: 미연결 (PIN 전용)'
+      alert(`✅ 사업장 생성 완료\nURL: ${window.location.origin}/${res.slug}\nPIN: ${fPin}\n${ownerLine}`)
       setFName(''); setFPin(''); setFEmail(''); setShowForm(false)
       await load()
     } catch (e: any) { setError(e.message); alert(`생성 실패: ${e.message}`) }
@@ -122,6 +137,17 @@ export default function AdminPage() {
       await adminApi(`/admin/businesses/${slug}/owner`, { method: 'PATCH', body: JSON.stringify({ owner_email: null }) })
       await load()
     } catch (e: any) { alert(`해제 실패: ${e.message}`) }
+  }
+
+  const handleChangePlan = async (b: AdminBiz, plan: Plan) => {
+    if (plan === b.plan) return
+    try {
+      await adminApi(`/admin/businesses/${b.slug}/plan`, {
+        method: 'PATCH',
+        body: JSON.stringify({ plan }),
+      })
+      await load()
+    } catch (e: any) { alert(`요금제 변경 실패: ${e.message}`) }
   }
 
   const handleToggleActive = async (b: AdminBiz) => {
@@ -206,8 +232,11 @@ export default function AdminPage() {
               className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
             <input value={fPin} onChange={e => setFPin(e.target.value)} placeholder="관리자 PIN (4자리 이상)" inputMode="numeric"
               className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-            <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="사장님 구글 이메일" type="email"
+            <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="사장님 구글 이메일 (선택 — 비우면 PIN 전용)" type="email"
               className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <p className="text-xs text-gray-400 -mt-1 px-1">
+              비워두면 PIN으로만 로그인 가능한 사업장으로 생성됩니다. 나중에 우측 표의 <span className="text-blue-500">수정</span>으로 추가할 수 있어요.
+            </p>
             <div className="flex gap-2">
               <button onClick={handleCreate} disabled={creating}
                 className="flex-1 bg-blue-600 text-white text-sm font-bold py-2.5 rounded-xl hover:bg-blue-700 disabled:opacity-50">
@@ -227,11 +256,13 @@ export default function AdminPage() {
               <thead className="bg-gray-50 text-xs text-gray-500">
                 <tr>
                   <th className="text-left px-4 py-3">상태</th>
+                  <th className="text-left px-4 py-3">요금제</th>
                   <th className="text-left px-4 py-3">slug</th>
                   <th className="text-left px-4 py-3">사업장명</th>
                   <th className="text-left px-4 py-3">직원</th>
                   <th className="text-left px-4 py-3">Owner</th>
                   <th className="text-left px-4 py-3">최근 로그인</th>
+                  <th className="text-left px-4 py-3">생성일</th>
                 </tr>
               </thead>
               <tbody>
@@ -249,6 +280,21 @@ export default function AdminPage() {
                       >
                         {b.is_active === 1 ? '🟢 활성' : '🔴 정지'}
                       </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={b.plan}
+                        onChange={e => handleChangePlan(b, e.target.value as Plan)}
+                        className={`text-xs font-bold px-2 py-1 rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300 ${
+                          b.plan === 'paid'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-gray-50 text-gray-600 border-gray-200'
+                        }`}
+                        title="요금제 변경"
+                      >
+                        <option value="free">🆓 무료</option>
+                        <option value="paid">💎 유료</option>
+                      </select>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs">{b.slug}</td>
                     <td className="px-4 py-3 font-semibold">{b.name}</td>
@@ -288,11 +334,12 @@ export default function AdminPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-400">{b.owner_last_login || '-'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{fmtDateTime(b.owner_last_login)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{fmtDateTime(b.created_at)}</td>
                   </tr>
                 ))}
                 {bizList.length === 0 && (
-                  <tr><td colSpan={6} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
+                  <tr><td colSpan={8} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
                 )}
               </tbody>
             </table>
