@@ -245,7 +245,7 @@ export default function AdminPage() {
         </button>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6">
+      <main className="max-w-7xl mx-auto p-6">
         {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-4">{error}</div>}
 
         {!showForm ? (
@@ -279,8 +279,8 @@ export default function AdminPage() {
         {loading ? (
           <div className="text-center text-gray-400 py-10">불러오는 중...</div>
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+            <table className="w-full text-sm whitespace-nowrap">
               <thead className="bg-gray-50 text-xs text-gray-500">
                 <tr>
                   <th className="text-left px-4 py-3">상태</th>
