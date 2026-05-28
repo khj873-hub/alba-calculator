@@ -123,8 +123,9 @@ const migrate = db.transaction(() => {
     db.exec('ALTER TABLE businesses ADD COLUMN suspended_at TEXT')
   }
   // 요금제: 'free' | 'paid' (운영자가 직접 분류, 자동 결제 연동은 별도 단계)
+  // CHECK 제약은 ALTER TABLE에서 일부 환경 호환성 이슈 → 앱 레이어에서 검증
   if (!bizColsV3.find((c: any) => c.name === 'plan')) {
-    db.exec("ALTER TABLE businesses ADD COLUMN plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','paid'))")
+    db.exec("ALTER TABLE businesses ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
   }
   // time_off 테이블이 구 스키마(half_period NULL 허용)면 신 스키마로 재생성
   const toExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='time_off'").get() as any
