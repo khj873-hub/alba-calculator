@@ -40,16 +40,28 @@ export default async function adminRoutes(app: FastifyInstance) {
   )
 
   // 유료 결제 만료일(plan_expires_at) 변경 — null이면 무기한
+  // 미래 날짜로 설정 시 정지된 사업장이면 자동 활성화 (결제 받음 → 즉시 재개)
   app.patch<{ Params: { slug: string }; Body: { plan_expires_at: string | null } }>(
     '/api/admin/businesses/:slug/plan-expires-at', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = db.prepare('SELECT id, is_active FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
       const v = req.body.plan_expires_at
       if (v !== null && !/^\d{4}-\d{2}-\d{2}$/.test(v ?? '')) {
         return reply.code(400).send({ error: '날짜 형식은 YYYY-MM-DD 또는 null' })
       }
+
+      // 자동 활성화 조건: 새 기한이 오늘 이후(>=) + 현재 정지 상태
+      const todayYmd = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const shouldAutoActivate = v !== null && v >= todayYmd && biz.is_active === 0
+
+      if (shouldAutoActivate) {
+        db.prepare('UPDATE businesses SET plan_expires_at = ?, is_active = 1, suspended_at = NULL WHERE slug = ?')
+          .run(v, req.params.slug)
+        return { ok: true, plan_expires_at: v, auto_activated: true }
+      }
+
       db.prepare('UPDATE businesses SET plan_expires_at = ? WHERE slug = ?').run(v, req.params.slug)
-      return { ok: true, plan_expires_at: v }
+      return { ok: true, plan_expires_at: v, auto_activated: false }
     }
   )
 

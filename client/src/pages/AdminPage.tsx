@@ -167,10 +167,13 @@ export default function AdminPage() {
     const v = ymd || null
     if (v === b.plan_expires_at) return
     try {
-      await adminApi(`/admin/businesses/${b.slug}/plan-expires-at`, {
+      const res: any = await adminApi(`/admin/businesses/${b.slug}/plan-expires-at`, {
         method: 'PATCH',
         body: JSON.stringify({ plan_expires_at: v }),
       })
+      if (res?.auto_activated) {
+        alert(`✅ 기한 연장 + 자동 활성화 완료 (${v})`)
+      }
       await load()
     } catch (e: any) { alert(`기한 변경 실패: ${e.message}`) }
   }
