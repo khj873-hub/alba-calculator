@@ -14,11 +14,24 @@ interface AdminBiz {
   is_active: number
   suspended_at: string | null
   plan: Plan
+  plan_expires_at: string | null
   owner_user_id: number | null
   owner_email: string | null
   owner_name: string | null
   owner_last_login: string | null
   employee_count: number
+}
+
+// YYYY-MM-DD KST 오늘
+function todayYmd() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+// 기한까지 며칠 (음수면 만료)
+function daysUntil(ymd: string | null): number | null {
+  if (!ymd) return null
+  const t = new Date(ymd + 'T00:00:00+09:00').getTime()
+  const now = new Date(todayYmd() + 'T00:00:00+09:00').getTime()
+  return Math.floor((t - now) / (1000 * 60 * 60 * 24))
 }
 
 function fmtDateTime(s: string | null) {
@@ -150,6 +163,18 @@ export default function AdminPage() {
     } catch (e: any) { alert(`요금제 변경 실패: ${e.message}`) }
   }
 
+  const handleChangeExpiresAt = async (b: AdminBiz, ymd: string) => {
+    const v = ymd || null
+    if (v === b.plan_expires_at) return
+    try {
+      await adminApi(`/admin/businesses/${b.slug}/plan-expires-at`, {
+        method: 'PATCH',
+        body: JSON.stringify({ plan_expires_at: v }),
+      })
+      await load()
+    } catch (e: any) { alert(`기한 변경 실패: ${e.message}`) }
+  }
+
   const handleToggleActive = async (b: AdminBiz) => {
     const next = b.is_active === 1 ? 0 : 1
     const action = next === 0 ? '정지' : '활성화'
@@ -257,6 +282,7 @@ export default function AdminPage() {
                 <tr>
                   <th className="text-left px-4 py-3">상태</th>
                   <th className="text-left px-4 py-3">요금제</th>
+                  <th className="text-left px-4 py-3">기한</th>
                   <th className="text-left px-4 py-3">slug</th>
                   <th className="text-left px-4 py-3">사업장명</th>
                   <th className="text-left px-4 py-3">직원</th>
@@ -295,6 +321,36 @@ export default function AdminPage() {
                         <option value="free">🆓 무료</option>
                         <option value="paid">💎 유료</option>
                       </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const d = daysUntil(b.plan_expires_at)
+                        const status =
+                          d === null ? '' :
+                          d < 0 ? '🔴 만료' :
+                          d <= 7 ? `🟡 D-${d}` :
+                          `🟢 D-${d}`
+                        const inputCls =
+                          b.plan !== 'paid' ? 'border-gray-200 bg-gray-50 text-gray-400' :
+                          d === null ? 'border-gray-200 text-gray-600' :
+                          d < 0 ? 'border-red-300 bg-red-50 text-red-700' :
+                          d <= 7 ? 'border-yellow-300 bg-yellow-50 text-yellow-800' :
+                          'border-green-300 bg-green-50 text-green-700'
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            <input
+                              type="date"
+                              value={b.plan_expires_at || ''}
+                              onChange={e => handleChangeExpiresAt(b, e.target.value)}
+                              className={`text-xs px-2 py-1 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-300 ${inputCls}`}
+                              title={b.plan === 'paid' ? '유료 결제 만료일 (도달 시 자동 정지)' : '무료 사용자엔 적용 안 됨 (참고용)'}
+                            />
+                            {b.plan === 'paid' && status && (
+                              <span className="text-[10px] font-bold text-gray-500 px-1">{status}</span>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs">{b.slug}</td>
                     <td className="px-4 py-3 font-semibold">{b.name}</td>
@@ -339,7 +395,7 @@ export default function AdminPage() {
                   </tr>
                 ))}
                 {bizList.length === 0 && (
-                  <tr><td colSpan={8} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
+                  <tr><td colSpan={9} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
                 )}
               </tbody>
             </table>
