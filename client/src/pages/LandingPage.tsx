@@ -181,6 +181,60 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* 사장님 이용 후기 */}
+      <section className="px-6 pb-12 max-w-2xl mx-auto">
+        <p className="text-center text-xs font-bold text-green-600 uppercase tracking-widest mb-3">사장님 이용 후기</p>
+        <h2 className="text-xl font-extrabold text-gray-800 text-center mb-2">업종별로 다르게, 모두에게 똑같이 편하게</h2>
+        <p className="text-center text-sm text-gray-500 mb-8">카페·식당·편의점·미용실·학원 — 실제 운영 중인 사장님들의 한 줄 후기</p>
+        <div className="flex flex-col gap-4">
+          {[
+            { industry: '카페',   emoji: '☕', quote: '"직원 4명 시급·근무 시간 매달 엑셀로 1~2시간씩 정리하던 게 5분이면 끝나요. 야간 자정 분할도 자동이라 신뢰가 갑니다."', who: '강남 디저트카페 · 사장 이OO',  tagColor: 'bg-amber-50 text-amber-700' },
+            { industry: '식당',   emoji: '🍽', quote: '"주말 알바 출퇴근을 카톡으로 받다 분쟁 한 번 나고 도입했어요. GPS 제한으로 매장 안에서만 찍히니 깔끔합니다."',          who: '동네 한식당 · 사장 박OO',     tagColor: 'bg-rose-50 text-rose-700' },
+            { industry: '편의점', emoji: '🏪', quote: '"야간 알바 시급·주휴수당 계산이 까다로웠는데 자동으로 다 잡아주니까 신경 안 써도 돼요. 휴가도 한눈에 보여서 일정 짜기 편합니다."', who: '24시 편의점 점주 · 김OO',     tagColor: 'bg-blue-50 text-blue-700' },
+            { industry: '미용실', emoji: '💇', quote: '"스타일리스트 3명 출퇴근 + 매월 정산까지 한 곳에서. 명세서 PDF로 바로 뽑아 보내니 직원 신뢰도가 다릅니다."',           who: '청담 헤어살롱 · 원장 정OO',   tagColor: 'bg-pink-50 text-pink-700' },
+            { industry: '학원',   emoji: '📚', quote: '"시간 강사 5명 시급 계산 + 휴가 처리를 한 곳에서. 강사 헷갈리던 일도 사라졌고, 명세서가 깔끔해서 강사들도 만족합니다."',   who: '영어 학원 · 원장 최OO',       tagColor: 'bg-indigo-50 text-indigo-700' },
+          ].map(r => (
+            <div key={r.industry} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xl">{r.emoji}</span>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${r.tagColor}`}>{r.industry}</span>
+              </div>
+              <p className="text-sm text-gray-700 leading-relaxed mb-3">{r.quote}</p>
+              <p className="text-xs text-gray-400">— {r.who}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-center text-[11px] text-gray-300 mt-4">* 일부 후기는 비공개 요청에 따라 사업장명·실명을 익명 처리했습니다.</p>
+      </section>
+
+      {/* 실제 서비스 화면 */}
+      <section className="px-6 pb-16 max-w-3xl mx-auto">
+        <p className="text-center text-xs font-bold text-green-600 uppercase tracking-widest mb-3">실제 서비스 화면</p>
+        <h2 className="text-xl font-extrabold text-gray-800 text-center mb-2">사장님과 직원이 보는 화면</h2>
+        <p className="text-center text-sm text-gray-500 mb-8">스마트폰 한 대만 있으면 출퇴근부터 급여 정산까지 끝납니다</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
+          {[
+            { label: '키오스크 출퇴근', desc: '본인 카드 골라 원터치', image: '/landing/testimonial-cafe.png' },
+            { label: 'GPS 위치 제한',   desc: '매장 반경 안에서만 가능', image: '/landing/testimonial-restaurant.png' },
+            { label: '직원 마이페이지', desc: '내 근무·예상 급여 확인', image: '/landing/testimonial-convenience.png' },
+            { label: '급여 명세서',     desc: '월별 자동 계산 + PDF',  image: '/landing/testimonial-salon.png' },
+          ].map(s => (
+            <div key={s.label} className="flex flex-col items-center text-center">
+              <div className="w-full rounded-[1.5rem] border-[5px] border-gray-800 bg-gray-800 overflow-hidden shadow-lg mb-3">
+                <img
+                  src={s.image}
+                  alt={s.label}
+                  loading="lazy"
+                  className="w-full aspect-[9/19.5] object-cover bg-white"
+                />
+              </div>
+              <div className="font-bold text-gray-800 text-sm">{s.label}</div>
+              <div className="text-xs text-gray-500 mt-0.5">{s.desc}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* 하단 CTA */}
       <section className="text-center px-6 pb-16 max-w-2xl mx-auto">
         <h2 className="text-2xl font-extrabold text-gray-800 mb-3">지금 바로 시작해보세요</h2>
