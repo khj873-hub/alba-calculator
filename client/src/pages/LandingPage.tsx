@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchBusiness, ServiceSuspendedError } from '../api'
+import InquiryForm from '../components/InquiryForm'
+import KakaoFloatButton from '../components/KakaoFloatButton'
 
-const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfqabZynjYejxaNUbJoCAL1LmBFZh5a1lCF4WudjaNvFEtVkg/viewform'
+const KAKAO_URL = 'https://pf.kakao.com/_xdwVxjX'
 
 export default function LandingPage() {
   const [code, setCode] = useState('')
@@ -99,9 +101,7 @@ export default function LandingPage() {
           <strong className="text-gray-700">단기·장기 직원</strong> 모두를 위한 근태 관리 서비스
         </p>
         <a
-          href={FORM_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+          href="#inquiry"
           className="inline-block bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200"
         >
           무료로 사업장 등록하기 →
@@ -235,18 +235,31 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 하단 CTA */}
-      <section className="text-center px-6 pb-16 max-w-2xl mx-auto">
-        <h2 className="text-2xl font-extrabold text-gray-800 mb-3">지금 바로 시작해보세요</h2>
-        <p className="text-gray-500 text-sm mb-6">복잡한 설치 없이, 신청 후 1~2일 내 시작 가능합니다</p>
-        <a
-          href={FORM_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200 w-full max-w-sm text-center"
-        >
-          무료로 시작하기
-        </a>
+      {/* 도입 문의 폼 */}
+      <section className="px-6 pb-16 max-w-2xl mx-auto" id="inquiry">
+        <div className="text-center mb-6">
+          <p className="text-xs font-bold text-green-600 uppercase tracking-widest mb-2">CONTACT</p>
+          <h2 className="text-2xl font-extrabold text-gray-800 mb-2">도입, 어렵지 않아요</h2>
+          <p className="text-gray-500 text-sm">아직 고민 중이시라면, 지금 문의 남겨주세요. 영업일 1~2일 내 연락드립니다.</p>
+        </div>
+        <InquiryForm />
+
+        {/* 카카오톡 오픈채팅 안내 */}
+        <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-2xl p-5 flex items-center gap-4">
+          <span className="text-3xl shrink-0">💬</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-gray-800 mb-0.5">카카오톡으로 즉시 문의</p>
+            <p className="text-xs text-gray-500">오픈채팅으로 바로 대화 가능합니다</p>
+          </div>
+          <a
+            href={KAKAO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-yellow-300 hover:bg-yellow-400 text-gray-900 font-bold px-4 py-2.5 rounded-xl text-sm transition shrink-0"
+          >
+            카톡 채팅 →
+          </a>
+        </div>
       </section>
 
       {/* 푸터 */}
@@ -264,6 +277,9 @@ export default function LandingPage() {
           경기도 성남시 분당구 운중로 124 804호 · khj873@jinusoft.com · 0505-170-3258
         </p>
       </footer>
+
+      {/* 우하단 카카오톡 플로팅 (환경변수 있을 때만) */}
+      <KakaoFloatButton />
     </div>
   )
 }

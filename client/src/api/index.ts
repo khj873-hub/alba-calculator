@@ -131,3 +131,13 @@ export const fetchPayroll = (slug: string, year: number, month: number) => {
 // 인증 — PIN 검증 후 세션 토큰 반환
 export const verifyPin = (slug: string, pin: string) =>
   req<{ ok: boolean; token: string }>(`/${slug}/auth/pin`, { method: 'POST', body: JSON.stringify({ pin }) })
+
+// 도입 문의 — 공개 (rate limit 적용됨)
+export const submitInquiry = (body: {
+  source?: string | null
+  business_name: string
+  phone: string
+  content?: string | null
+  agreed_privacy: boolean
+  agreed_marketing?: boolean
+}) => req<{ ok: boolean }>(`/inquiries`, { method: 'POST', body: JSON.stringify(body) })
