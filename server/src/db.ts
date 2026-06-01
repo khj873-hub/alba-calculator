@@ -200,6 +200,22 @@ db.exec(`
     UNIQUE(employee_id, date, half_period)
   );
   CREATE INDEX IF NOT EXISTS idx_timeoff_emp_date ON time_off(employee_id, date);
+
+  CREATE TABLE IF NOT EXISTS inquiries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT,
+    business_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    content TEXT,
+    agreed_marketing INTEGER NOT NULL DEFAULT 0,
+    ip TEXT,
+    status TEXT NOT NULL DEFAULT 'new',
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    handled_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_inquiry_status ON inquiries(status);
+  CREATE INDEX IF NOT EXISTS idx_inquiry_created ON inquiries(created_at DESC);
 `)
 
 // 토큰 헬퍼 (employees INSERT 시 사용)

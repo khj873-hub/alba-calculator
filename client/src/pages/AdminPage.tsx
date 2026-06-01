@@ -4,6 +4,29 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 const ADMIN_TOKEN_KEY = 'admin_token'
 
 type Plan = 'free' | 'paid'
+type InquiryStatus = 'new' | 'in_progress' | 'done' | 'spam'
+type AdminTab = 'businesses' | 'inquiries'
+
+interface AdminInquiry {
+  id: number
+  source: string | null
+  business_name: string
+  phone: string
+  content: string | null
+  agreed_marketing: number
+  ip: string | null
+  status: InquiryStatus
+  note: string | null
+  created_at: string
+  handled_at: string | null
+}
+
+const STATUS_LABELS: Record<InquiryStatus, { label: string; cls: string }> = {
+  new:         { label: '🆕 신규',    cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  in_progress: { label: '⏳ 처리 중', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  done:        { label: '✅ 완료',    cls: 'bg-green-50 text-green-700 border-green-200' },
+  spam:        { label: '🚫 스팸',    cls: 'bg-gray-100 text-gray-500 border-gray-200' },
+}
 
 interface AdminBiz {
   id: number
@@ -92,6 +115,13 @@ export default function AdminPage() {
   const [editOwnerSlug, setEditOwnerSlug] = useState<string | null>(null)
   const [editOwnerEmail, setEditOwnerEmail] = useState('')
 
+  // 탭 + 문의 내역
+  const [tab, setTab] = useState<AdminTab>('businesses')
+  const [inquiries, setInquiries] = useState<AdminInquiry[]>([])
+  const [inqCounts, setInqCounts] = useState<{ status: string; n: number }[]>([])
+  const [inqFilter, setInqFilter] = useState<InquiryStatus | 'all'>('new')
+  const [inqLoading, setInqLoading] = useState(false)
+
   useEffect(() => {
     fetch('/api/auth/google/status').then(r => r.json()).then(d => {
       setOauthEnabled(!!d.enabled)
@@ -111,6 +141,42 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => { if (authed) load() }, [authed, load])
+
+  const loadInquiries = useCallback(async () => {
+    if (!getToken()) return
+    setInqLoading(true)
+    try {
+      const params = inqFilter === 'all' ? '' : `?status=${inqFilter}`
+      const data = await adminApi<{ rows: AdminInquiry[]; counts: { status: string; n: number }[] }>(
+        `/admin/inquiries${params}`,
+      )
+      setInquiries(data.rows)
+      setInqCounts(data.counts)
+    } catch (e: any) { setError(e.message) }
+    finally { setInqLoading(false) }
+  }, [inqFilter])
+
+  useEffect(() => { if (authed && tab === 'inquiries') loadInquiries() }, [authed, tab, loadInquiries])
+
+  const handleInquiryStatus = async (id: number, status: InquiryStatus) => {
+    try {
+      await adminApi(`/admin/inquiries/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      await loadInquiries()
+    } catch (e: any) { alert(`상태 변경 실패: ${e.message}`) }
+  }
+
+  const handleInquiryDelete = async (id: number) => {
+    if (!confirm('이 문의를 영구 삭제하시겠어요? (스팸·중복 정리용)')) return
+    try {
+      await adminApi(`/admin/inquiries/${id}`, { method: 'DELETE' })
+      await loadInquiries()
+    } catch (e: any) { alert(`삭제 실패: ${e.message}`) }
+  }
+
+  const newCount = inqCounts.find(c => c.status === 'new')?.n || 0
 
   const handleCreate = async () => {
     if (!fName.trim() || !fPin) { setError('사업장명·PIN 필수'); return }
@@ -248,6 +314,106 @@ export default function AdminPage() {
       <main className="max-w-7xl mx-auto p-6">
         {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-4">{error}</div>}
 
+        {/* 탭 */}
+        <div className="flex gap-1 mb-5 border-b border-gray-200">
+          <button
+            onClick={() => setTab('businesses')}
+            className={`px-4 py-2.5 text-sm font-bold transition border-b-2 -mb-px ${
+              tab === 'businesses' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            🏪 사업장 ({bizList.length})
+          </button>
+          <button
+            onClick={() => setTab('inquiries')}
+            className={`px-4 py-2.5 text-sm font-bold transition border-b-2 -mb-px relative ${
+              tab === 'inquiries' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            💬 도입 문의
+            {newCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1">
+                {newCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {tab === 'inquiries' && (
+          <div>
+            {/* 필터 */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(['all','new','in_progress','done','spam'] as const).map(s => {
+                const cnt = s === 'all' ? inqCounts.reduce((a,b) => a + b.n, 0) : (inqCounts.find(c => c.status === s)?.n || 0)
+                const active = inqFilter === s
+                const label = s === 'all' ? '전체' : STATUS_LABELS[s].label
+                return (
+                  <button key={s} onClick={() => setInqFilter(s)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition ${
+                      active
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    }`}>
+                    {label} <span className="opacity-70 ml-1">{cnt}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {inqLoading ? (
+              <div className="text-center text-gray-400 py-10">불러오는 중...</div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-xs text-gray-500">
+                    <tr>
+                      <th className="text-left px-4 py-3 whitespace-nowrap">상태</th>
+                      <th className="text-left px-4 py-3 whitespace-nowrap">접수</th>
+                      <th className="text-left px-4 py-3 whitespace-nowrap">사업장명</th>
+                      <th className="text-left px-4 py-3 whitespace-nowrap">휴대폰</th>
+                      <th className="text-left px-4 py-3 whitespace-nowrap">경로</th>
+                      <th className="text-left px-4 py-3">문의 내용</th>
+                      <th className="text-left px-4 py-3 whitespace-nowrap">처리</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inquiries.map(q => (
+                      <tr key={q.id} className="border-t border-gray-100 align-top">
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <select
+                            value={q.status}
+                            onChange={e => handleInquiryStatus(q.id, e.target.value as InquiryStatus)}
+                            className={`text-xs font-bold px-2 py-1 rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300 ${STATUS_LABELS[q.status].cls}`}
+                          >
+                            {(Object.keys(STATUS_LABELS) as InquiryStatus[]).map(s => (
+                              <option key={s} value={s}>{STATUS_LABELS[s].label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDateTime(q.created_at)}</td>
+                        <td className="px-4 py-3 font-semibold whitespace-nowrap">{q.business_name}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <a href={`tel:${q.phone}`} className="text-blue-600 hover:underline">{q.phone}</a>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{q.source || '-'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-700 whitespace-pre-wrap min-w-[280px] max-w-[420px]">{q.content || '-'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <button onClick={() => handleInquiryDelete(q.id)}
+                            className="text-xs text-red-400 hover:text-red-600">삭제</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {inquiries.length === 0 && (
+                      <tr><td colSpan={7} className="text-center text-gray-400 py-10">해당 상태의 문의가 없습니다</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'businesses' && (<>
         {!showForm ? (
           <button onClick={() => setShowForm(true)}
             className="mb-4 bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-blue-700 transition">
@@ -404,6 +570,7 @@ export default function AdminPage() {
             </table>
           </div>
         )}
+        </>)}
       </main>
     </div>
   )
