@@ -15,6 +15,8 @@ export interface Business {
   leave_pay_calc_mode?: LeavePayCalcMode
   weekly_holiday_includes_leave?: number
   time_off_enabled?: number
+  weekly_holiday_threshold_hours?: number
+  week_start_day?: number  // 1=월요일, 0=일요일
 }
 
 export interface TimeOffRecord {

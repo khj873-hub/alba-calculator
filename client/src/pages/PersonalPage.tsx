@@ -145,7 +145,11 @@ export default function PersonalPage() {
 
   const payOn = employee.pay_enabled === 1
   const basePay = payOn ? Math.floor((totalMins / 60) * employee.hourly_rate) : 0
-  const weeklyHolidayPay = payOn ? calcWeeklyHolidayPay(inMonthSegs.map(x => x.s), employee.hourly_rate) : 0
+  const thresholdHours = business?.weekly_holiday_threshold_hours ?? 15
+  const weekStartDay: 0 | 1 = business?.week_start_day === 0 ? 0 : 1
+  const weeklyHolidayPay = payOn
+    ? calcWeeklyHolidayPay(inMonthSegs.map(x => x.s), employee.hourly_rate, thresholdHours, weekStartDay)
+    : 0
   const totalPay = basePay + weeklyHolidayPay
 
   return (

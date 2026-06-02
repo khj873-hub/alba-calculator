@@ -15,7 +15,8 @@ export default function EmployeeFormPage() {
   const slug = useSlug()
 
   const [name, setName] = useState('')
-  const [hourlyRate, setHourlyRate] = useState(9860)
+  const [hourlyRateInput, setHourlyRateInput] = useState('10320')
+  const hourlyRate = parseInt(hourlyRateInput, 10) || 0
   const [color, setColor] = useState(COLORS[0])
   const [payEnabled, setPayEnabledState] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -26,7 +27,7 @@ export default function EmployeeFormPage() {
     fetchEmployees(slug).then((list) => {
       const emp = list.find((e) => e.id === Number(id))
       if (emp) {
-        setName(emp.name); setHourlyRate(emp.hourly_rate); setColor(emp.color)
+        setName(emp.name); setHourlyRateInput(String(emp.hourly_rate)); setColor(emp.color)
         setPayEnabledState(emp.pay_enabled === 1)
       }
     })
@@ -84,7 +85,7 @@ export default function EmployeeFormPage() {
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-sm font-semibold text-gray-600">
               시급 (원) {payEnabled && '*'}
-              <span className="text-xs text-gray-400 font-normal ml-2">2025 최저시급 9,860원</span>
+              <span className="text-xs text-gray-400 font-normal ml-2">2026 최저시급 10,320원</span>
             </label>
             <button
               type="button"
@@ -101,10 +102,12 @@ export default function EmployeeFormPage() {
             </button>
           </div>
           <input
-            type="number"
-            value={hourlyRate}
-            onChange={(e) => setHourlyRate(Number(e.target.value))}
-            min={0}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={hourlyRateInput}
+            onChange={(e) => setHourlyRateInput(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={() => { if (!hourlyRateInput) setHourlyRateInput('0') }}
             disabled={!payEnabled}
             className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 ${
               payEnabled ? 'border-gray-200' : 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'

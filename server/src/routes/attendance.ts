@@ -26,18 +26,22 @@ function nowKST() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
 }
 
-function getWeekKey(dateStr: string): string {
+// startDay: 1=월요일 시작, 0=일요일 시작
+function getWeekKey(dateStr: string, startDay: 0 | 1 = 1): string {
   const d = new Date(dateStr)
   const day = d.getDay()
-  const monday = new Date(d)
-  monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
-  return monday.toISOString().slice(0, 10)
+  // 월요일 시작: (day===0 ? 6 : day-1) 일 빼기 / 일요일 시작: day 일 빼기
+  const offset = startDay === 1 ? (day === 0 ? 6 : day - 1) : day
+  const weekStart = new Date(d)
+  weekStart.setDate(d.getDate() - offset)
+  return weekStart.toISOString().slice(0, 10)
 }
 
-function calcWeeklyHolidayPay(weekMap: Map<string, number>, hourlyRate: number): number {
+function calcWeeklyHolidayPay(weekMap: Map<string, number>, hourlyRate: number, thresholdHours = 15): number {
   let total = 0
+  const thresholdMins = thresholdHours * 60
   for (const weekMins of weekMap.values()) {
-    if (weekMins >= 15 * 60) {
+    if (weekMins >= thresholdMins) {
       total += Math.floor((weekMins / 60 / 40) * 8 * hourlyRate)
     }
   }
@@ -156,13 +160,15 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const prefix = `${year}-${String(month).padStart(2, '0')}`
 
       const biz = db.prepare(
-        'SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled FROM businesses WHERE slug = ?'
+        'SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day FROM businesses WHERE slug = ?'
       ).get(slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
 
       const timeOffEnabled: boolean = biz.time_off_enabled === 1
       const leaveMode: '8hours' | 'avg_workhours' = biz.leave_pay_calc_mode === 'avg_workhours' ? 'avg_workhours' : '8hours'
       const includeLeaveInWeekly: boolean = timeOffEnabled && biz.weekly_holiday_includes_leave === 1
+      const thresholdHours: number = Number(biz.weekly_holiday_threshold_hours ?? 15)
+      const weekStartDay: 0 | 1 = biz.week_start_day === 0 ? 0 : 1
 
       // payroll도 월 경계 근무 양쪽 월에서 잡히도록
       const records = db.prepare(`
@@ -259,18 +265,18 @@ export default async function attendanceRoutes(app: FastifyInstance) {
         const weekMap = new Map<string, number>()
         for (const r of e.records) {
           for (const seg of (r.segments as { date: string; mins: number }[])) {
-            const wk = getWeekKey(seg.date + 'T00:00:00')
+            const wk = getWeekKey(seg.date + 'T00:00:00', weekStartDay)
             weekMap.set(wk, (weekMap.get(wk) ?? 0) + seg.mins)
           }
         }
         if (includeLeaveInWeekly) {
           for (const t of e.time_off) {
             if (t.type !== 'annual') continue
-            const wk = getWeekKey(t.date + 'T00:00:00')
+            const wk = getWeekKey(t.date + 'T00:00:00', weekStartDay)
             weekMap.set(wk, (weekMap.get(wk) ?? 0) + Math.floor(t.portion * 8 * 60))
           }
         }
-        const weekly_holiday_pay = calcWeeklyHolidayPay(weekMap, e.hourly_rate)
+        const weekly_holiday_pay = calcWeeklyHolidayPay(weekMap, e.hourly_rate, thresholdHours)
 
         return {
           ...e,

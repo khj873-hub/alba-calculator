@@ -33,8 +33,12 @@ export default function ManagerDashboard() {
   const [timeOffEnabled, setTimeOffEnabled] = useState<boolean>(false)
   const [leaveMode, setLeaveMode] = useState<LeavePayCalcMode>('8hours')
   const [includeLeaveInWeekly, setIncludeLeaveInWeekly] = useState<boolean>(true)
+  const [thresholdHours, setThresholdHours] = useState<number>(15)
+  const [thresholdInput, setThresholdInput] = useState<string>('15')
+  const [weekStartDay, setWeekStartDay] = useState<0 | 1>(1)
   const [leavePolicySaving, setLeavePolicySaving] = useState(false)
   const [showLeavePolicyForm, setShowLeavePolicyForm] = useState(false)
+  const [showHolidayPayForm, setShowHolidayPayForm] = useState(false)
 
   // 위치 설정
   const [showLocationForm, setShowLocationForm] = useState(false)
@@ -54,6 +58,10 @@ export default function ManagerDashboard() {
       setTimeOffEnabled((biz.time_off_enabled ?? 0) === 1)
       setLeaveMode(biz.leave_pay_calc_mode === 'avg_workhours' ? 'avg_workhours' : '8hours')
       setIncludeLeaveInWeekly((biz.weekly_holiday_includes_leave ?? 1) === 1)
+      const th = Number(biz.weekly_holiday_threshold_hours ?? 15)
+      setThresholdHours(th)
+      setThresholdInput(String(th))
+      setWeekStartDay(biz.week_start_day === 0 ? 0 : 1)
     } finally { setLoading(false) }
   }, [slug])
 
@@ -124,6 +132,31 @@ export default function ManagerDashboard() {
     try {
       await updateLeavePolicy(slug, { weekly_holiday_includes_leave: next })
       setIncludeLeaveInWeekly(next)
+    } catch (e: any) { setError(e.message) }
+    finally { setLeavePolicySaving(false) }
+  }
+
+  const handleSetThreshold = async (hours: number) => {
+    if (leavePolicySaving) return
+    if (!Number.isFinite(hours) || hours < 0 || hours > 40) {
+      setError('주휴수당 기준 시간은 0~40 사이여야 합니다'); return
+    }
+    if (hours === thresholdHours) return
+    setLeavePolicySaving(true); setError('')
+    try {
+      await updateLeavePolicy(slug, { weekly_holiday_threshold_hours: hours })
+      setThresholdHours(hours)
+      setThresholdInput(String(hours))
+    } catch (e: any) { setError(e.message) }
+    finally { setLeavePolicySaving(false) }
+  }
+
+  const handleSetWeekStartDay = async (d: 0 | 1) => {
+    if (d === weekStartDay || leavePolicySaving) return
+    setLeavePolicySaving(true); setError('')
+    try {
+      await updateLeavePolicy(slug, { week_start_day: d })
+      setWeekStartDay(d)
     } catch (e: any) { setError(e.message) }
     finally { setLeavePolicySaving(false) }
   }
@@ -327,24 +360,113 @@ export default function ManagerDashboard() {
                   </div>
                 </div>
 
-                <div className="border-t border-gray-200 pt-3">
-                  <div className="text-xs font-semibold text-gray-500 mb-2">주휴수당 15시간 카운트</div>
-                  <button
-                    onClick={handleToggleIncludeLeave}
-                    disabled={leavePolicySaving}
-                    className={`w-full text-left rounded-xl p-3 border-2 transition ${
-                      includeLeaveInWeekly ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
-                    } disabled:opacity-50`}
-                  >
-                    <div className="font-bold text-sm text-gray-800 mb-1">
-                      연차 사용일을 주 15시간 카운트에 {includeLeaveInWeekly ? '포함 ✓' : '제외'}
-                    </div>
-                    <p className="text-xs text-gray-500 leading-relaxed">
-                      ON: 근로기준법 기본 (연차일도 일한 것으로 간주) / OFF: 실제 근무일만 카운트
-                    </p>
-                  </button>
-                </div>
               </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 주휴수당 정책 — 항상 노출 (휴가 정책 마스터와 독립) */}
+      <div className="mt-6 border-t border-gray-100 pt-6">
+        <button
+          onClick={() => setShowHolidayPayForm(v => !v)}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
+        >
+          <span>📅 주휴수당 정책</span>
+          <span className="text-xs px-2 py-0.5 rounded-full font-bold ml-1 bg-emerald-100 text-emerald-700">
+            주 {thresholdHours}시간 · {weekStartDay === 1 ? '월요일 시작' : '일요일 시작'}
+          </span>
+          <span className="ml-auto">{showHolidayPayForm ? '▲' : '▼'}</span>
+        </button>
+
+        {showHolidayPayForm && (
+          <div className="mt-4 bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
+            <div>
+              <div className="text-xs font-semibold text-gray-500 mb-2">주휴수당 기준 시간</div>
+              <p className="text-[11px] text-gray-400 mb-2 leading-relaxed">
+                주 N시간 이상 근무한 직원에게 주휴수당이 지급됩니다. 법정 기준은 15시간이며, 사업장이 더 엄격하게 설정 가능합니다.
+              </p>
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                {[15, 20, 30].map(h => (
+                  <button key={h}
+                    onClick={() => handleSetThreshold(h)}
+                    disabled={leavePolicySaving}
+                    className={`rounded-xl py-2 px-1 text-sm font-bold border-2 transition ${
+                      thresholdHours === h ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    } disabled:opacity-50`}>
+                    {h}시간 {h === 15 && <span className="text-[10px] block font-normal opacity-70">법정</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">또는 직접 입력</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={40}
+                  value={thresholdInput}
+                  onChange={e => setThresholdInput(e.target.value)}
+                  onBlur={() => {
+                    const n = parseInt(thresholdInput, 10)
+                    if (Number.isFinite(n) && n >= 0 && n <= 40) handleSetThreshold(n)
+                    else setThresholdInput(String(thresholdHours))
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                  disabled={leavePolicySaving}
+                  className={`flex-1 border-2 rounded-xl px-3 py-1.5 text-sm font-bold text-center focus:outline-none disabled:opacity-50 ${
+                    ![15, 20, 30].includes(thresholdHours) ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-gray-200'
+                  }`}
+                />
+                <span className="text-xs text-gray-500">시간</span>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4">
+              <div className="text-xs font-semibold text-gray-500 mb-2">주차 시작 요일</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleSetWeekStartDay(1)}
+                  disabled={leavePolicySaving}
+                  className={`rounded-xl py-2 text-sm font-bold border-2 transition ${
+                    weekStartDay === 1 ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  } disabled:opacity-50`}>
+                  월요일 시작 <span className="text-[10px] block font-normal opacity-70">표준</span>
+                </button>
+                <button
+                  onClick={() => handleSetWeekStartDay(0)}
+                  disabled={leavePolicySaving}
+                  className={`rounded-xl py-2 text-sm font-bold border-2 transition ${
+                    weekStartDay === 0 ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  } disabled:opacity-50`}>
+                  일요일 시작
+                </button>
+              </div>
+            </div>
+
+            {timeOffEnabled && (
+              <div className="border-t border-gray-200 pt-4">
+                <div className="text-xs font-semibold text-gray-500 mb-2">연차 사용일 처리</div>
+                <button
+                  onClick={handleToggleIncludeLeave}
+                  disabled={leavePolicySaving}
+                  className={`w-full text-left rounded-xl p-3 border-2 transition ${
+                    includeLeaveInWeekly ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                  } disabled:opacity-50`}
+                >
+                  <div className="font-bold text-sm text-gray-800 mb-1">
+                    연차 사용일을 주 {thresholdHours}시간 카운트에 {includeLeaveInWeekly ? '포함 ✓' : '제외'}
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    ON: 근로기준법 기본 (연차일도 일한 것으로 간주) / OFF: 실제 근무일만 카운트
+                  </p>
+                </button>
+              </div>
+            )}
+            {!timeOffEnabled && (
+              <p className="text-[11px] text-gray-400 leading-relaxed border-t border-gray-200 pt-3">
+                * 연차 처리 옵션은 위의 <strong>휴가 정책 ON</strong> 시 노출됩니다.
+              </p>
             )}
           </div>
         )}
