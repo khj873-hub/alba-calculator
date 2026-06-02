@@ -132,6 +132,15 @@ const migrate = db.transaction(() => {
   if (!bizColsV3.find((c: any) => c.name === 'plan_expires_at')) {
     db.exec('ALTER TABLE businesses ADD COLUMN plan_expires_at TEXT')
   }
+  // 주휴수당 정책 — 사업장별 커스터마이즈
+  // weekly_holiday_threshold_hours: 주휴수당 지급 기준 시간 (법정 15시간, 사업장이 더 엄격하게 가능)
+  // week_start_day: 주차 시작 요일 (1=월, 0=일)
+  if (!bizColsV3.find((c: any) => c.name === 'weekly_holiday_threshold_hours')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN weekly_holiday_threshold_hours INTEGER NOT NULL DEFAULT 15')
+  }
+  if (!bizColsV3.find((c: any) => c.name === 'week_start_day')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN week_start_day INTEGER NOT NULL DEFAULT 1')
+  }
   // time_off 테이블이 구 스키마(half_period NULL 허용)면 신 스키마로 재생성
   const toExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='time_off'").get() as any
   if (toExists) {
@@ -167,7 +176,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    hourly_rate INTEGER NOT NULL DEFAULT 9860,
+    hourly_rate INTEGER NOT NULL DEFAULT 10320,
     color TEXT NOT NULL DEFAULT '#3B82F6',
     access_token TEXT,
     pay_enabled INTEGER NOT NULL DEFAULT 1,

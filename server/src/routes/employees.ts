@@ -45,7 +45,7 @@ export default async function employeesRoutes(app: FastifyInstance) {
       const token = generateAccessToken()
       const result = db.prepare(
         'INSERT INTO employees (business_id, name, hourly_rate, color, access_token, pay_enabled) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(bizId, name.trim(), hourly_rate || 9860, color || '#3B82F6', token, pay_enabled === false ? 0 : 1)
+      ).run(bizId, name.trim(), hourly_rate || 10320, color || '#3B82F6', token, pay_enabled === false ? 0 : 1)
       return db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid)
     }
   )

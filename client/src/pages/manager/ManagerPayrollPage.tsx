@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { fetchPayroll, fetchEmployees, updateEmployee } from '../../api'
+import { fetchPayroll, fetchEmployees, updateEmployee, fetchBusiness } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getWeekKey } from '../../utils/pay'
-import type { PayrollEntry, Employee } from '../../types'
+import type { PayrollEntry, Employee, Business } from '../../types'
 
 function fmtDuration(mins: number) {
   const h = Math.floor(mins / 60)
@@ -17,11 +17,19 @@ interface AdjustedEntry {
   leavePay: number
   paidLeaveDays: number
   unpaidDays: number
+  sickDays: number
+  familyDays: number
   totalPay: number
   workDays: number
 }
 
-function getAdjusted(entry: PayrollEntry, breakEnabled: boolean, holidayEnabled: boolean): AdjustedEntry {
+function getAdjusted(
+  entry: PayrollEntry,
+  breakEnabled: boolean,
+  holidayEnabled: boolean,
+  thresholdHours: number,
+  weekStartDay: 0 | 1,
+): AdjustedEntry {
   // segment 단위로 일별 누적 (서버가 segments 채워줌. 없으면 clock_in 날짜에 duration_minutes 통째 사용)
   const dateMinMap = new Map<string, number>()
   for (const r of entry.records) {
@@ -42,14 +50,15 @@ function getAdjusted(entry: PayrollEntry, breakEnabled: boolean, holidayEnabled:
   for (const [date, mins] of dateMinMap) {
     const adjusted = breakEnabled ? Math.max(0, mins - 60) : mins
     totalMins += adjusted
-    const wk = getWeekKey(date + 'T00:00:00')
+    const wk = getWeekKey(date + 'T00:00:00', weekStartDay)
     weekMap.set(wk, (weekMap.get(wk) ?? 0) + adjusted)
   }
 
   let holidayPay = 0
   if (holidayEnabled) {
+    const thresholdMins = thresholdHours * 60
     for (const wkMins of weekMap.values()) {
-      if (wkMins >= 15 * 60) {
+      if (wkMins >= thresholdMins) {
         holidayPay += Math.floor((wkMins / 60 / 40) * 8 * entry.hourly_rate)
       }
     }
@@ -59,7 +68,9 @@ function getAdjusted(entry: PayrollEntry, breakEnabled: boolean, holidayEnabled:
   const leavePay = entry.paid_leave_pay ?? 0
   const paidLeaveDays = entry.paid_leave_days ?? 0
   const unpaidDays = entry.unpaid_leave_days ?? 0
-  return { totalMins, basePay, holidayPay, leavePay, paidLeaveDays, unpaidDays, totalPay: basePay + holidayPay + leavePay, workDays }
+  const sickDays = entry.sick_days ?? 0
+  const familyDays = entry.family_days ?? 0
+  return { totalMins, basePay, holidayPay, leavePay, paidLeaveDays, unpaidDays, sickDays, familyDays, totalPay: basePay + holidayPay + leavePay, workDays }
 }
 
 function downloadPayslipCsv(
@@ -94,9 +105,17 @@ function downloadPayslipCsv(
   lines.push(row('항목', '금액(원)'))
   lines.push(row('기본급', adj.basePay))
   lines.push(row('주휴수당', holidayOn ? adj.holidayPay : 0))
+  lines.push(row('유급휴가 수당', adj.leavePay))
   lines.push(row('합계', adj.totalPay))
   lines.push(row('3.3% 공제', -deduct))
   lines.push(row('실수령액', net))
+  lines.push('')
+  lines.push(row('휴가 일수'))
+  lines.push(row('항목', '일수'))
+  lines.push(row('유급휴가(연차)', adj.paidLeaveDays))
+  lines.push(row('무급휴가', adj.unpaidDays))
+  lines.push(row('병가', adj.sickDays))
+  lines.push(row('경조사', adj.familyDays))
   lines.push('')
   lines.push(row('근무 상세'))
   lines.push(row('날짜', '출근', '퇴근', '근무시간(분)'))
@@ -210,9 +229,18 @@ function openPayslip(
     <div class="section-title">지급 내역</div>
     <div class="pay-row"><span>기본급</span><span>${adj.basePay.toLocaleString()}원</span></div>
     <div class="pay-row"><span>주휴수당</span><span>${(holidayOn ? adj.holidayPay : 0).toLocaleString()}원</span></div>
+    <div class="pay-row"><span>유급휴가 수당</span><span>${adj.leavePay.toLocaleString()}원</span></div>
     <div class="pay-row total"><span>합계</span><span>${adj.totalPay.toLocaleString()}원</span></div>
     <div class="deduct-line"><span>3.3% 공제액</span><span>- ${Math.floor(adj.totalPay * 0.033).toLocaleString()}원</span></div>
     <div class="net-pay"><span class="label">실수령액</span><span class="amount">${Math.floor(adj.totalPay * 0.967).toLocaleString()}원</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">휴가 일수</div>
+    <div class="pay-row"><span>유급휴가(연차)</span><span>${adj.paidLeaveDays}일</span></div>
+    <div class="pay-row"><span>무급휴가</span><span>${adj.unpaidDays}일</span></div>
+    <div class="pay-row"><span>병가</span><span>${adj.sickDays}일</span></div>
+    <div class="pay-row"><span>경조사</span><span>${adj.familyDays}일</span></div>
   </div>
 
   <div class="section">
@@ -256,7 +284,8 @@ export default function PayrollPage() {
   const [data, setData] = useState<PayrollEntry[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [editRateId, setEditRateId] = useState<number | null>(null)
-  const [editRate, setEditRate] = useState(0)
+  const [editRateInput, setEditRateInput] = useState('0')
+  const editRate = parseInt(editRateInput, 10) || 0
   const [saving, setSaving] = useState(false)
   const [breakTimeEnabled, setBreakTimeEnabled] = useState(
     () => localStorage.getItem(`payroll_break_time_${slug}`) === 'true'
@@ -268,10 +297,12 @@ export default function PayrollPage() {
   const [bizNameInput, setBizNameInput] = useState('')
   // 직원별 주휴수당 ON/OFF: { [employee_id]: boolean }
   const [holidayMap, setHolidayMap] = useState<Record<number, boolean>>({})
+  const [business, setBusiness] = useState<Business | null>(null)
 
   const load = () => fetchPayroll(slug, year, month).then(setData)
   useEffect(() => { load() }, [slug, year, month])
   useEffect(() => { fetchEmployees(slug).then(setEmployees) }, [slug])
+  useEffect(() => { fetchBusiness(slug).then(setBusiness).catch(() => {}) }, [slug])
 
   // 데이터 로드 시 localStorage에서 직원별 설정 복원 (기본값: true)
   useEffect(() => {
@@ -306,7 +337,7 @@ export default function PayrollPage() {
   const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1) } else setMonth(m => m + 1) }
 
-  const startEditRate = (entry: PayrollEntry) => { setEditRateId(entry.employee_id); setEditRate(entry.hourly_rate) }
+  const startEditRate = (entry: PayrollEntry) => { setEditRateId(entry.employee_id); setEditRateInput(String(entry.hourly_rate)) }
   const saveRate = async () => {
     if (!editRateId) return
     setSaving(true)
@@ -323,9 +354,11 @@ export default function PayrollPage() {
     }
   }
 
+  const thresholdHours = business?.weekly_holiday_threshold_hours ?? 15
+  const weekStartDay: 0 | 1 = business?.week_start_day === 0 ? 0 : 1
   const adjustedData = data.map(e => {
     const payOn = (employees.find(emp => emp.id === e.employee_id)?.pay_enabled ?? 1) === 1
-    const baseAdj = getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true)
+    const baseAdj = getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true, thresholdHours, weekStartDay)
     const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, leavePay: 0, totalPay: 0 }
     return { entry: e, adj, payOn }
   })
@@ -442,9 +475,12 @@ export default function PayrollPage() {
                       {editRateId === entry.employee_id ? (
                         <div className="flex items-center gap-1">
                           <input
-                            type="number"
-                            value={editRate}
-                            onChange={(e) => setEditRate(Number(e.target.value))}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={editRateInput}
+                            onChange={(e) => setEditRateInput(e.target.value.replace(/[^0-9]/g, ''))}
+                            onBlur={() => { if (!editRateInput) setEditRateInput('0') }}
                             className="w-24 border border-gray-200 rounded-lg px-2 py-0.5 text-xs"
                           />
                           <span className="text-xs text-gray-400">원/시간</span>
