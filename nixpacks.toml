@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3"]
+nixPkgs = ["nodejs_20", "python3", "litestream"]
 
 [phases.install]
 cmds = [
@@ -10,8 +10,9 @@ cmds = [
 [phases.build]
 cmds = [
   "cd server && npm run build",
-  "cd client && npm run build"
+  "cd client && npm run build",
+  "chmod +x /app/start.sh"
 ]
 
 [start]
-cmd = "cd server && node dist/index.js"
+cmd = "/app/start.sh"
