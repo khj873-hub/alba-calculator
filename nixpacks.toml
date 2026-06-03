@@ -1,8 +1,13 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3", "litestream"]
+nixPkgs = ["nodejs_20", "python3", "wget", "gnutar", "gzip"]
 
 [phases.install]
 cmds = [
+  "mkdir -p /app/bin",
+  "wget -q https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestream-v0.3.13-linux-amd64.tar.gz -O /tmp/litestream.tar.gz",
+  "tar -xzf /tmp/litestream.tar.gz -C /app/bin/",
+  "chmod +x /app/bin/litestream",
+  "/app/bin/litestream version",
   "cd server && npm install --include=dev",
   "cd client && npm install --include=dev"
 ]
