@@ -10,6 +10,193 @@
 
 ---
 
+## 🗺 시스템 흐름 (전체 한눈에)
+
+```mermaid
+flowchart LR
+  subgraph User["👥 사용자"]
+    O["사장님<br/>(관리자)"]
+    E["직원<br/>(알바)"]
+    A["운영자<br/>(jinusoft19)"]
+  end
+
+  subgraph Client["💻 Client · React + Vite"]
+    Landing["LandingPage<br/>홍보·후기·신청"]
+    Manager["Manager 영역<br/>Dashboard / Payroll<br/>Attendance / EmployeeForm"]
+    Personal["PersonalPage<br/>출퇴근·예상급여"]
+    Admin["AdminPage<br/>운영자 콘솔"]
+  end
+
+  subgraph Server["🔧 Server · Fastify + Node 20"]
+    R1["/api/businesses<br/>/api/employees"]
+    R2X["/api/attendance<br/>/api/time-off<br/>/api/payroll"]
+    R3["/api/admin<br/>/api/inquiries<br/>/api/oauth"]
+    Mid["requireManagerAuth<br/>PIN/Google session"]
+    BK["backup.ts<br/>setInterval 5분"]
+  end
+
+  subgraph Storage["💾 Storage"]
+    DB[("SQLite alba.db<br/>WAL · 7 tables<br/>Railway volume")]
+    R2S[("Cloudflare R2<br/>snapshots/<br/>30일 retention")]
+  end
+
+  subgraph External["🌐 External"]
+    Google["Google OAuth"]
+    Resend["Resend Email<br/>(보류)"]
+  end
+
+  O -->|등록·로그인| Landing
+  O -->|관리| Manager
+  E -->|access_token 링크| Personal
+  A -->|ADMIN_EMAILS<br/>+ Google| Admin
+
+  Landing --> R1
+  Manager --> Mid --> R1
+  Manager --> Mid --> R2X
+  Personal --> R2X
+  Admin --> Mid --> R3
+  Landing --> R3
+
+  R1 --> DB
+  R2X --> DB
+  R3 --> DB
+
+  BK -.->|.backup\(\)| DB
+  BK ==>|PutObject 5분| R2S
+
+  Mid -.->|로그인| Google
+  R3 -.->|알림| Resend
+
+  style BK fill:#e1f5e1,stroke:#22c98a
+  style R2S fill:#e1f5e1,stroke:#22c98a
+  style DB fill:#fff3e1,stroke:#e0b658
+```
+
+---
+
+## 🗃 데이터 모델 (ER 다이어그램)
+
+```mermaid
+erDiagram
+  USERS ||--o{ SESSIONS : "1명당 여러 세션"
+  BUSINESSES ||--o{ EMPLOYEES : "사업장당 여러 직원"
+  BUSINESSES ||--o{ TIME_OFF : "사업장당 휴가 기록"
+  EMPLOYEES ||--o{ ATTENDANCE : "직원당 출퇴근 기록"
+  EMPLOYEES ||--o{ TIME_OFF : "직원당 휴가"
+
+  USERS {
+    integer id PK
+    text email UK
+    text pin_hash "scrypt"
+    text google_sub "OAuth 백업"
+    integer is_admin
+  }
+  SESSIONS {
+    text token PK
+    integer user_id FK
+    text expires_at "24시간"
+  }
+  BUSINESSES {
+    integer id PK
+    text slug UK "사장님별 URL"
+    text name
+    text manager_pin_hash
+    real lat
+    real lng
+    integer radius_meters
+    text home_mode "kiosk|private"
+    text leave_pay_calc_mode "8hours|avg_workhours"
+    integer weekly_holiday_threshold_hours "주휴수당 기준 시간"
+    integer week_start_day "1=월요일, 0=일요일"
+    integer time_off_enabled
+    text plan "free|paid"
+    text plan_expires_at
+    text status "active|suspended"
+    text google_email
+  }
+  EMPLOYEES {
+    integer id PK
+    integer business_id FK
+    text name
+    integer hourly_rate
+    text color
+    text access_token UK "개인 링크"
+    integer pay_enabled
+    integer pay_includes_holiday "주휴 포함 시급 모드"
+  }
+  ATTENDANCE {
+    integer id PK
+    integer employee_id FK
+    text clock_in
+    text clock_out "nullable, NULL이면 근무중"
+    text memo
+  }
+  TIME_OFF {
+    integer id PK
+    integer employee_id FK
+    text date
+    text type "annual|unpaid|sick|family"
+    real portion "1.0=하루, 0.5=반차"
+    text half_period "am|pm|full"
+    text memo
+  }
+  INQUIRIES {
+    integer id PK
+    text business_name
+    text phone
+    text content
+    integer agreed_privacy
+    integer agreed_marketing
+    text status "new|contacted|completed"
+  }
+```
+
+---
+
+## ⏱ 핵심 요청 흐름 (출퇴근 → 급여 명세서)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant E as 직원
+  participant P as PersonalPage<br/>(client)
+  participant API as /api/attendance<br/>(Fastify)
+  participant DB as SQLite alba.db
+  participant BK as backup.ts<br/>(setInterval 5분)
+  participant R2 as Cloudflare R2
+
+  E->>P: 🟢 출근하기 버튼 클릭
+  P->>P: GPS 위치 확인 (geo.ts)
+  P->>API: POST /api/attendance/clock-in<br/>{employee_id, lat, lng}
+  API->>API: 사업장 GPS 반경 검증
+  API->>DB: INSERT INTO attendance<br/>(clock_in=now)
+  DB-->>API: ok
+  API-->>P: AttendanceRecord
+  P-->>E: ✅ 출근 처리됨
+
+  Note over BK,R2: 비동기 백그라운드 (5분 간격)
+  BK->>DB: db.backup('/tmp/snap.db')
+  DB-->>BK: snapshot file
+  BK->>R2: PutObject<br/>snapshots/alba-...db
+  R2-->>BK: 200 OK
+  BK->>R2: ListObjectsV2 + DeleteObjects<br/>(30일 초과 정리)
+
+  Note over E,DB: ...월말 명세서 발행...
+
+  participant M as ManagerPayrollPage
+  participant 사장 as 사장님
+  사장->>M: 급여 페이지 진입
+  M->>API: GET /api/{slug}/payroll?year&month
+  API->>DB: 사업장 정책 조회<br/>(threshold_hours, week_start_day, leave_mode)
+  API->>DB: SELECT attendance + time_off<br/>(해당 월)
+  API->>API: getAdjusted() per 직원<br/>- 일별 누적 (segments)<br/>- 주차별 합산<br/>- 주휴수당 계산<br/>- pay_includes_holiday=1이면 0<br/>- 휴게시간 공제<br/>- 유급휴가 환산
+  API-->>M: PayrollEntry[]
+  M->>M: openPayslip() / downloadPayslipCsv()<br/>분기: 포함 모드 직원은 헤더에 분해 표기
+  M-->>사장: PDF 새 창 / CSV 다운로드
+```
+
+---
+
 ## 기술 스택
 
 | 영역 | 기술 |
