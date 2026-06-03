@@ -15,11 +15,12 @@ const INTERVAL_MS = 5 * 60 * 1000      // 5분
 const RETENTION_DAYS = 30
 const PREFIX = 'snapshots/'
 
+// 환경변수에 섞인 trailing whitespace/newline은 SigV4 서명 미스매치 유발
 const s3 = ENABLED ? new S3Client({
-  endpoint: process.env.R2_ENDPOINT,
+  endpoint: process.env.R2_ENDPOINT!.trim(),
   credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!.trim(),
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!.trim(),
   },
   region: 'auto',
   forcePathStyle: true,
