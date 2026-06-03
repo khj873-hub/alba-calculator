@@ -40,6 +40,7 @@ export interface Employee {
   color: string
   access_token: string
   pay_enabled: number
+  pay_includes_holiday: number  // 1=시급에 주휴수당 포함(포괄임금), 0=별도 지급(기본)
   created_at: string
   is_working: boolean
   clock_in: string | null
@@ -70,6 +71,7 @@ export interface PayrollEntry {
   employee_name: string
   hourly_rate: number
   color: string
+  pay_includes_holiday?: number
   total_minutes: number
   base_pay: number
   weekly_holiday_pay: number

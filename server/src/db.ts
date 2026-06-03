@@ -98,6 +98,12 @@ const migrate = db.transaction(() => {
   if (empColsAfter.length > 0 && !empColsAfter.find((c: any) => c.name === 'pay_enabled')) {
     db.exec('ALTER TABLE employees ADD COLUMN pay_enabled INTEGER NOT NULL DEFAULT 1')
   }
+  // 주휴수당 포함 시급 모드 — 시급에 주휴분이 녹아있는 포괄임금형 직원
+  // 0=별도 지급(기본, 자동 산정) / 1=포함(시급 그대로, weekly_holiday_pay=0)
+  const empColsV4 = db.prepare('PRAGMA table_info(employees)').all() as any[]
+  if (empColsV4.length > 0 && !empColsV4.find((c: any) => c.name === 'pay_includes_holiday')) {
+    db.exec('ALTER TABLE employees ADD COLUMN pay_includes_holiday INTEGER NOT NULL DEFAULT 0')
+  }
   const bizColsAfter = db.prepare('PRAGMA table_info(businesses)').all() as any[]
   if (!bizColsAfter.find((c: any) => c.name === 'home_mode')) {
     db.exec("ALTER TABLE businesses ADD COLUMN home_mode TEXT NOT NULL DEFAULT 'kiosk'")
@@ -180,6 +186,7 @@ db.exec(`
     color TEXT NOT NULL DEFAULT '#3B82F6',
     access_token TEXT,
     pay_enabled INTEGER NOT NULL DEFAULT 1,
+    pay_includes_holiday INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   );
 

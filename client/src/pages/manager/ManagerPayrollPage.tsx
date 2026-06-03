@@ -91,20 +91,27 @@ function downloadPayslipCsv(
   const net = Math.floor(adj.totalPay * 0.967)
   const deduct = Math.floor(adj.totalPay * 0.033)
 
+  const includesHoliday = entry.pay_includes_holiday === 1
   const lines: string[] = []
   lines.push(row('급여 명세서'))
   if (businessName) lines.push(row('사업자명', businessName))
   lines.push(row('발급일', issueDate))
   lines.push(row('직원명', entry.employee_name))
   lines.push(row('귀속월', `${year}년 ${month}월`))
-  lines.push(row('시급(원)', entry.hourly_rate))
+  if (includesHoliday) {
+    const baseEq = Math.floor(entry.hourly_rate / 1.2)
+    const holidayEq = entry.hourly_rate - baseEq
+    lines.push(row('시급(원)', `${entry.hourly_rate} (주휴 포함 — 근로분 ${baseEq.toLocaleString()}원 + 주휴분 ${holidayEq.toLocaleString()}원/시간)`))
+  } else {
+    lines.push(row('시급(원)', entry.hourly_rate))
+  }
   lines.push(row('휴게공제', breakEnabled ? '일 1시간 적용' : '미적용'))
-  lines.push(row('주휴수당', holidayOn ? 'ON' : 'OFF'))
+  if (!includesHoliday) lines.push(row('주휴수당', holidayOn ? 'ON' : 'OFF'))
   lines.push('')
   lines.push(row('지급 내역'))
   lines.push(row('항목', '금액(원)'))
-  lines.push(row('기본급', adj.basePay))
-  lines.push(row('주휴수당', holidayOn ? adj.holidayPay : 0))
+  lines.push(row(includesHoliday ? '기본급 (주휴 포함)' : '기본급', adj.basePay))
+  if (!includesHoliday) lines.push(row('주휴수당', holidayOn ? adj.holidayPay : 0))
   lines.push(row('유급휴가 수당', adj.leavePay))
   lines.push(row('합계', adj.totalPay))
   lines.push(row('3.3% 공제', -deduct))
@@ -159,6 +166,7 @@ function openPayslip(
   businessName: string
 ) {
   const issueDate = new Date().toLocaleDateString('ko-KR')
+  const includesHoliday = entry.pay_includes_holiday === 1
   const recordRows = entry.records.flatMap(r => {
     if (r.segments && r.segments.length > 0) {
       return r.segments.map(s => `<tr>
@@ -219,7 +227,11 @@ function openPayslip(
   <div class="info-grid">
     <div class="info-item"><span>직원명</span>${entry.employee_name}</div>
     <div class="info-item"><span>귀속월</span>${year}년 ${month}월</div>
-    <div class="info-item"><span>시급</span>${entry.hourly_rate.toLocaleString()}원</div>
+    <div class="info-item" style="${includesHoliday ? 'grid-column:1/-1;' : ''}"><span>시급</span>${entry.hourly_rate.toLocaleString()}원${includesHoliday ? (() => {
+      const baseEq = Math.floor(entry.hourly_rate / 1.2)
+      const holidayEq = entry.hourly_rate - baseEq
+      return ` <b style="color:#16a34a;">(주휴 포함</b><span style="font-size:11px;color:#666;"> — 근로분 ${baseEq.toLocaleString()}원 + 주휴분 ${holidayEq.toLocaleString()}원/시간</span><b style="color:#16a34a;">)</b>`
+    })() : ''}</div>
     <div class="info-item"><span>근무일수</span>${adj.workDays}일</div>
     <div class="info-item"><span>총 근무시간</span>${fmtDuration(adj.totalMins)}</div>
     ${breakEnabled ? '<div class="info-item"><span>휴게공제</span>일 1시간</div>' : ''}
@@ -227,8 +239,8 @@ function openPayslip(
 
   <div class="section">
     <div class="section-title">지급 내역</div>
-    <div class="pay-row"><span>기본급</span><span>${adj.basePay.toLocaleString()}원</span></div>
-    <div class="pay-row"><span>주휴수당</span><span>${(holidayOn ? adj.holidayPay : 0).toLocaleString()}원</span></div>
+    <div class="pay-row"><span>${includesHoliday ? '기본급 <span style="font-size:11px;color:#16a34a;">(주휴 포함)</span>' : '기본급'}</span><span>${adj.basePay.toLocaleString()}원</span></div>
+    ${includesHoliday ? '' : `<div class="pay-row"><span>주휴수당</span><span>${(holidayOn ? adj.holidayPay : 0).toLocaleString()}원</span></div>`}
     <div class="pay-row"><span>유급휴가 수당</span><span>${adj.leavePay.toLocaleString()}원</span></div>
     <div class="pay-row total"><span>합계</span><span>${adj.totalPay.toLocaleString()}원</span></div>
     <div class="deduct-line"><span>3.3% 공제액</span><span>- ${Math.floor(adj.totalPay * 0.033).toLocaleString()}원</span></div>
@@ -357,10 +369,14 @@ export default function PayrollPage() {
   const thresholdHours = business?.weekly_holiday_threshold_hours ?? 15
   const weekStartDay: 0 | 1 = business?.week_start_day === 0 ? 0 : 1
   const adjustedData = data.map(e => {
-    const payOn = (employees.find(emp => emp.id === e.employee_id)?.pay_enabled ?? 1) === 1
-    const baseAdj = getAdjusted(e, breakTimeEnabled, holidayMap[e.employee_id] ?? true, thresholdHours, weekStartDay)
+    const empRecord = employees.find(emp => emp.id === e.employee_id)
+    const payOn = (empRecord?.pay_enabled ?? 1) === 1
+    // 포함 모드 직원은 holidayMap 토글 무시하고 강제 OFF (시급에 이미 녹아있음)
+    const includesHoliday = (empRecord?.pay_includes_holiday ?? e.pay_includes_holiday ?? 0) === 1
+    const holidayEffective = !includesHoliday && (holidayMap[e.employee_id] ?? true)
+    const baseAdj = getAdjusted(e, breakTimeEnabled, holidayEffective, thresholdHours, weekStartDay)
     const adj = payOn ? baseAdj : { ...baseAdj, basePay: 0, holidayPay: 0, leavePay: 0, totalPay: 0 }
-    return { entry: e, adj, payOn }
+    return { entry: e, adj, payOn, includesHoliday }
   })
   const totalPay = adjustedData.reduce((s, { adj }) => s + adj.totalPay, 0)
   const totalHolidayPay = adjustedData.reduce((s, { adj }) => s + adj.holidayPay, 0)
@@ -437,8 +453,8 @@ export default function PayrollPage() {
         <div className="text-center py-16 text-gray-400 text-sm">이번 달 근무 기록이 없습니다</div>
       ) : (
         <div className="flex flex-col gap-3">
-          {adjustedData.map(({ entry, adj, payOn }) => {
-            const holidayOn = holidayMap[entry.employee_id] ?? true
+          {adjustedData.map(({ entry, adj, payOn, includesHoliday }) => {
+            const holidayOn = !includesHoliday && (holidayMap[entry.employee_id] ?? true)
             return (
               <div key={entry.employee_id} className={`rounded-2xl border shadow-sm p-4 ${payOn ? 'bg-white border-gray-100' : 'bg-gray-50 border-gray-200'}`}>
                 <div className="flex items-center gap-3 mb-3">
@@ -457,8 +473,13 @@ export default function PayrollPage() {
                             급여 미적용
                           </span>
                         )}
+                        {includesHoliday && (
+                          <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold shrink-0">
+                            주휴 포함 시급
+                          </span>
+                        )}
                       </div>
-                      {payOn && (
+                      {payOn && !includesHoliday && (
                         <button
                           onClick={() => toggleEmployeeHoliday(entry.employee_id)}
                           className={`text-xs px-2 py-1 rounded-lg border font-semibold transition shrink-0 ${
@@ -516,9 +537,13 @@ export default function PayrollPage() {
                     <div className="bg-green-50 rounded-xl py-2 px-1">
                       <div className="text-xs text-green-600 mb-0.5">예상 급여</div>
                       <div className="font-extrabold text-green-700 text-sm">{adj.totalPay.toLocaleString()}원</div>
-                      <div className={`text-xs ${holidayOn && adj.holidayPay > 0 ? 'text-green-500' : 'text-gray-400'}`}>
-                        주휴수당 {holidayOn ? adj.holidayPay.toLocaleString() : 0}원
-                      </div>
+                      {includesHoliday ? (
+                        <div className="text-xs text-emerald-600">주휴수당 시급 포함</div>
+                      ) : (
+                        <div className={`text-xs ${holidayOn && adj.holidayPay > 0 ? 'text-green-500' : 'text-gray-400'}`}>
+                          주휴수당 {holidayOn ? adj.holidayPay.toLocaleString() : 0}원
+                        </div>
+                      )}
                       {adj.leavePay > 0 && (
                         <div className="text-xs text-emerald-600">
                           🏖 연차 {adj.paidLeaveDays}일 ({adj.leavePay.toLocaleString()}원)

@@ -19,8 +19,13 @@ export default function EmployeeFormPage() {
   const hourlyRate = parseInt(hourlyRateInput, 10) || 0
   const [color, setColor] = useState(COLORS[0])
   const [payEnabled, setPayEnabledState] = useState(true)
+  const [payIncludesHoliday, setPayIncludesHoliday] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  // 주휴 환산 별도 시급 (포함 시급 ÷ 1.2, 주 40h 기준)
+  const equivalentBase = payIncludesHoliday && hourlyRate > 0 ? Math.floor(hourlyRate / 1.2) : 0
+  const equivalentBelowMin = payIncludesHoliday && equivalentBase > 0 && equivalentBase < 10320
 
   useEffect(() => {
     if (!isEdit) return
@@ -29,6 +34,7 @@ export default function EmployeeFormPage() {
       if (emp) {
         setName(emp.name); setHourlyRateInput(String(emp.hourly_rate)); setColor(emp.color)
         setPayEnabledState(emp.pay_enabled === 1)
+        setPayIncludesHoliday(emp.pay_includes_holiday === 1)
       }
     })
   }, [id, isEdit, slug])
@@ -39,9 +45,9 @@ export default function EmployeeFormPage() {
     setSaving(true); setError('')
     try {
       if (isEdit) {
-        await updateEmployee(slug, Number(id), { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled })
+        await updateEmployee(slug, Number(id), { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled, pay_includes_holiday: payIncludesHoliday })
       } else {
-        await createEmployee(slug, { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled })
+        await createEmployee(slug, { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled, pay_includes_holiday: payIncludesHoliday })
       }
       navigate(`/${slug}/manager`)
     } catch (e: any) { setError(e.message); setSaving(false) }
@@ -71,7 +77,10 @@ export default function EmployeeFormPage() {
             style={{ background: color }}>{name ? name[0] : '?'}</div>
           <div>
             <div className="font-bold text-gray-800">{name || '이름 미입력'}</div>
-            <div className="text-xs text-gray-400">시급 {hourlyRate.toLocaleString()}원</div>
+            <div className="text-xs text-gray-400">
+              시급 {hourlyRate.toLocaleString()}원
+              {payIncludesHoliday && <span className="ml-1 text-emerald-600 font-bold">(주휴 포함)</span>}
+            </div>
           </div>
         </div>
 
@@ -117,6 +126,45 @@ export default function EmployeeFormPage() {
             <p className="text-xs text-gray-400 mt-1.5">
               💡 이 직원은 근태만 기록되고 급여는 계산되지 않습니다 (무급·봉사·견습 등)
             </p>
+          )}
+
+          {payEnabled && (
+            <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-gray-700">주휴수당을 시급에 포함</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+                    시급에 주휴분이 이미 녹아있는 포괄임금형. 매주 별도 주휴수당 자동 산정이 꺼집니다.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPayIncludesHoliday(v => !v)}
+                  aria-pressed={payIncludesHoliday}
+                  className="flex-shrink-0"
+                >
+                  <span className={`block w-11 h-6 rounded-full relative transition-colors ${payIncludesHoliday ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${payIncludesHoliday ? 'left-[22px]' : 'left-0.5'}`} />
+                  </span>
+                </button>
+              </div>
+              {payIncludesHoliday && hourlyRate > 0 && (
+                <div className={`mt-2.5 text-xs px-2.5 py-2 rounded-lg leading-relaxed ${equivalentBelowMin ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                  <div>
+                    주휴 환산 별도 시급 ≈ <b>{equivalentBase.toLocaleString()}원</b>
+                    <span className="text-[10px] text-gray-500 ml-1">(포함 시급 ÷ 1.2 · 주 40h 기준)</span>
+                  </div>
+                  {equivalentBelowMin && (
+                    <div className="mt-1 font-bold">⚠️ 주휴 환산 시급이 2026 최저(10,320원) 미달입니다. 포함 시급은 최소 12,384원 이상 권장.</div>
+                  )}
+                </div>
+              )}
+              {payIncludesHoliday && (
+                <div className="mt-2 text-[11px] text-gray-400 leading-relaxed">
+                  💡 근로계약서에 "시급 ××원 (주휴수당 포함)" 명시가 합법 운영의 전제입니다.
+                </div>
+              )}
+            </div>
           )}
         </div>
 
