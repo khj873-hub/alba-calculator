@@ -172,7 +172,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
 
       // payroll도 월 경계 근무 양쪽 월에서 잡히도록
       const records = db.prepare(`
-        SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
+        SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color, e.pay_includes_holiday
         FROM attendance a
         JOIN employees e ON e.id = a.employee_id
         JOIN businesses b ON b.id = e.business_id
@@ -197,6 +197,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
             employee_name: r.employee_name,
             hourly_rate: r.hourly_rate,
             color: r.color,
+            pay_includes_holiday: r.pay_includes_holiday === 1 ? 1 : 0,
             total_minutes: 0,
             records: [],
             time_off: [] as any[],
@@ -276,7 +277,11 @@ export default async function attendanceRoutes(app: FastifyInstance) {
             weekMap.set(wk, (weekMap.get(wk) ?? 0) + Math.floor(t.portion * 8 * 60))
           }
         }
-        const weekly_holiday_pay = calcWeeklyHolidayPay(weekMap, e.hourly_rate, thresholdHours)
+        // pay_includes_holiday=1 직원은 시급에 주휴분이 이미 포함되어 있으므로
+        // 자동 산정 0원 처리(이중 지급 방지). 명세서는 헤더에 "(주휴수당 포함)"로 표기.
+        const weekly_holiday_pay = e.pay_includes_holiday === 1
+          ? 0
+          : calcWeeklyHolidayPay(weekMap, e.hourly_rate, thresholdHours)
 
         return {
           ...e,

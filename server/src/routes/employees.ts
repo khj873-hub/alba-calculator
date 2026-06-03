@@ -36,35 +36,34 @@ export default async function employeesRoutes(app: FastifyInstance) {
     }
   )
 
-  app.post<{ Params: { slug: string }; Body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean } }>(
+  app.post<{ Params: { slug: string }; Body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean; pay_includes_holiday?: boolean } }>(
     '/api/:slug/employees', { preHandler: requireManagerAuth }, async (req, reply) => {
       const bizId = getBizId(req.params.slug)
       if (!bizId) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
-      const { name, hourly_rate, color, pay_enabled } = req.body
+      const { name, hourly_rate, color, pay_enabled, pay_includes_holiday } = req.body
       if (!name?.trim()) return reply.code(400).send({ error: '이름을 입력하세요' })
       const token = generateAccessToken()
       const result = db.prepare(
-        'INSERT INTO employees (business_id, name, hourly_rate, color, access_token, pay_enabled) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(bizId, name.trim(), hourly_rate || 10320, color || '#3B82F6', token, pay_enabled === false ? 0 : 1)
+        'INSERT INTO employees (business_id, name, hourly_rate, color, access_token, pay_enabled, pay_includes_holiday) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(bizId, name.trim(), hourly_rate || 10320, color || '#3B82F6', token, pay_enabled === false ? 0 : 1, pay_includes_holiday === true ? 1 : 0)
       return db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid)
     }
   )
 
-  app.put<{ Params: { slug: string; id: string }; Body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean } }>(
+  app.put<{ Params: { slug: string; id: string }; Body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean; pay_includes_holiday?: boolean } }>(
     '/api/:slug/employees/:id', { preHandler: requireManagerAuth }, async (req, reply) => {
       const bizId = getBizId(req.params.slug)
       if (!bizId) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
-      const { name, hourly_rate, color, pay_enabled } = req.body
+      const { name, hourly_rate, color, pay_enabled, pay_includes_holiday } = req.body
       const id = Number(req.params.id)
       const exists = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, bizId)
       if (!exists) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
-      if (typeof pay_enabled === 'boolean') {
-        db.prepare('UPDATE employees SET name=?, hourly_rate=?, color=?, pay_enabled=? WHERE id=?')
-          .run(name, hourly_rate, color, pay_enabled ? 1 : 0, id)
-      } else {
-        db.prepare('UPDATE employees SET name=?, hourly_rate=?, color=? WHERE id=?')
-          .run(name, hourly_rate, color, id)
-      }
+      const sets: string[] = ['name=?', 'hourly_rate=?', 'color=?']
+      const params: any[] = [name, hourly_rate, color]
+      if (typeof pay_enabled === 'boolean') { sets.push('pay_enabled=?'); params.push(pay_enabled ? 1 : 0) }
+      if (typeof pay_includes_holiday === 'boolean') { sets.push('pay_includes_holiday=?'); params.push(pay_includes_holiday ? 1 : 0) }
+      params.push(id)
+      db.prepare(`UPDATE employees SET ${sets.join(', ')} WHERE id=?`).run(...params)
       return db.prepare('SELECT * FROM employees WHERE id = ?').get(id)
     }
   )

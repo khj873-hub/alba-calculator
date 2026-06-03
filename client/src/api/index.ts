@@ -90,9 +90,9 @@ export const fetchEmployees = (slug: string) =>
   req<Employee[]>(`/${slug}/employees`)
 export const fetchEmployeeByToken = (slug: string, token: string) =>
   req<Employee>(`/${slug}/employees/by-token/${token}`)
-export const createEmployee = (slug: string, body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean }) =>
+export const createEmployee = (slug: string, body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean; pay_includes_holiday?: boolean }) =>
   req<Employee>(`/${slug}/employees`, { method: 'POST', body: JSON.stringify(body) }, getStoredToken(slug))
-export const updateEmployee = (slug: string, id: number, body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean }) =>
+export const updateEmployee = (slug: string, id: number, body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean; pay_includes_holiday?: boolean }) =>
   req<Employee>(`/${slug}/employees/${id}`, { method: 'PUT', body: JSON.stringify(body) }, getStoredToken(slug))
 export const deleteEmployee = (slug: string, id: number) =>
   req<{ ok: boolean }>(`/${slug}/employees/${id}`, { method: 'DELETE' }, getStoredToken(slug))

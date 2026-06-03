@@ -144,10 +144,12 @@ export default function PersonalPage() {
   if (!employee) return null
 
   const payOn = employee.pay_enabled === 1
+  const includesHoliday = employee.pay_includes_holiday === 1
   const basePay = payOn ? Math.floor((totalMins / 60) * employee.hourly_rate) : 0
   const thresholdHours = business?.weekly_holiday_threshold_hours ?? 15
   const weekStartDay: 0 | 1 = business?.week_start_day === 0 ? 0 : 1
-  const weeklyHolidayPay = payOn
+  // 포함 모드 직원은 시급에 주휴분이 녹아있으므로 별도 산정 0원
+  const weeklyHolidayPay = payOn && !includesHoliday
     ? calcWeeklyHolidayPay(inMonthSegs.map(x => x.s), employee.hourly_rate, thresholdHours, weekStartDay)
     : 0
   const totalPay = basePay + weeklyHolidayPay
@@ -169,7 +171,7 @@ export default function PersonalPage() {
           <div className="text-xl font-extrabold text-gray-800">{employee.name}</div>
           <div className="text-sm text-gray-400">
             {payOn
-              ? `시급 ${employee.hourly_rate.toLocaleString()}원`
+              ? <>시급 {employee.hourly_rate.toLocaleString()}원{includesHoliday && <span className="ml-1 text-emerald-600 font-bold">(주휴 포함)</span>}</>
               : '급여 계산 미적용'}
           </div>
         </div>
@@ -227,7 +229,9 @@ export default function PersonalPage() {
               <>
                 <div className="text-lg font-extrabold text-green-600">{totalPay.toLocaleString()}원</div>
                 <div className="text-xs text-gray-400">예상 급여</div>
-                {weeklyHolidayPay > 0 && (
+                {includesHoliday ? (
+                  <div className="text-xs text-emerald-600">주휴수당 시급 포함 (별도 지급 없음)</div>
+                ) : weeklyHolidayPay > 0 && (
                   <div className="text-xs text-green-500">주휴 {weeklyHolidayPay.toLocaleString()}원 포함</div>
                 )}
                 <div className="text-xs text-gray-400 mt-0.5">

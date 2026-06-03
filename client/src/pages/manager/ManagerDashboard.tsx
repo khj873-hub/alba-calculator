@@ -238,7 +238,10 @@ export default function ManagerDashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-gray-800">{emp.name}</div>
-                  <div className="text-xs text-gray-400">시급 {emp.hourly_rate.toLocaleString()}원</div>
+                  <div className="text-xs text-gray-400">
+                    시급 {emp.hourly_rate.toLocaleString()}원
+                    {emp.pay_includes_holiday === 1 && <span className="ml-1 text-emerald-600 font-bold">(주휴 포함)</span>}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={() => navigate(`/${slug}/manager/employees/${emp.id}/edit`)}
@@ -360,6 +363,23 @@ export default function ManagerDashboard() {
                   </div>
                 </div>
 
+                <div className="border-t border-gray-200 pt-3">
+                  <div className="text-xs font-semibold text-gray-500 mb-2">연차 사용일 처리</div>
+                  <button
+                    onClick={handleToggleIncludeLeave}
+                    disabled={leavePolicySaving}
+                    className={`w-full text-left rounded-xl p-3 border-2 transition ${
+                      includeLeaveInWeekly ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                    } disabled:opacity-50`}
+                  >
+                    <div className="font-bold text-sm text-gray-800 mb-1">
+                      연차 사용일을 주 {thresholdHours}시간 카운트에 {includeLeaveInWeekly ? '포함 ✓' : '제외'}
+                    </div>
+                    <p className="text-xs text-gray-500 leading-relaxed">
+                      ON: 근로기준법 기본 (연차일도 일한 것으로 간주) / OFF: 실제 근무일만 카운트
+                    </p>
+                  </button>
+                </div>
               </>
             )}
           </div>
@@ -444,30 +464,6 @@ export default function ManagerDashboard() {
               </div>
             </div>
 
-            {timeOffEnabled && (
-              <div className="border-t border-gray-200 pt-4">
-                <div className="text-xs font-semibold text-gray-500 mb-2">연차 사용일 처리</div>
-                <button
-                  onClick={handleToggleIncludeLeave}
-                  disabled={leavePolicySaving}
-                  className={`w-full text-left rounded-xl p-3 border-2 transition ${
-                    includeLeaveInWeekly ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200 bg-white hover:border-gray-300'
-                  } disabled:opacity-50`}
-                >
-                  <div className="font-bold text-sm text-gray-800 mb-1">
-                    연차 사용일을 주 {thresholdHours}시간 카운트에 {includeLeaveInWeekly ? '포함 ✓' : '제외'}
-                  </div>
-                  <p className="text-xs text-gray-500 leading-relaxed">
-                    ON: 근로기준법 기본 (연차일도 일한 것으로 간주) / OFF: 실제 근무일만 카운트
-                  </p>
-                </button>
-              </div>
-            )}
-            {!timeOffEnabled && (
-              <p className="text-[11px] text-gray-400 leading-relaxed border-t border-gray-200 pt-3">
-                * 연차 처리 옵션은 위의 <strong>휴가 정책 ON</strong> 시 노출됩니다.
-              </p>
-            )}
           </div>
         )}
       </div>
