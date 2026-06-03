@@ -13,6 +13,7 @@ import oauthRoutes from './routes/oauth'
 import adminRoutes from './routes/admin'
 import inquiriesRoutes from './routes/inquiries'
 import { db, verifyPinHash } from './db'
+import { startBackup } from './backup'
 
 function nowKST() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
@@ -112,4 +113,5 @@ const PORT = Number(process.env.PORT) || 3002
 app.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
   if (err) { console.error(err); process.exit(1) }
   console.log(`Alba server running on http://localhost:${PORT}`)
+  startBackup()
 })
