@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>퍼펙트근태 키오스크</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">🕐 퍼펙트근태 <span>키오스크 · 얼굴 출근</span></div>
+    <div id="status" class="status">시작하는 중…</div>
+  </header>
+
+  <main>
+    <section class="stage">
+      <div class="camwrap">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="hint" class="hint">화면을 정면으로 바라봐 주세요</div>
+      </div>
+      <div class="actions">
+        <button id="btnCheck" class="btn primary" disabled>출근 / 퇴근 체크</button>
+        <label class="live"><input type="checkbox" id="liveness" checked /> 대리출근 방지(눈 깜빡임)</label>
+      </div>
+      <div id="result" class="result"></div>
+    </section>
+
+    <aside class="panel">
+      <div class="card">
+        <h3>① 얼굴 등록</h3>
+        <input id="name" type="text" placeholder="직원 이름" autocomplete="off" />
+        <button id="btnEnroll" class="btn" disabled>현재 얼굴 등록</button>
+        <p class="note">등록은 데모용으로 이 기기에만 저장됩니다(원본 사진 저장 안 함).</p>
+      </div>
+      <div class="card">
+        <h3>등록된 직원 <span id="regCount">0</span></h3>
+        <ul id="regList" class="list"></ul>
+      </div>
+      <div class="card">
+        <h3>오늘 출퇴근 기록</h3>
+        <ul id="logList" class="list logs"></ul>
+        <button id="btnClear" class="btn ghost small">데모 데이터 초기화</button>
+      </div>
+    </aside>
+  </main>
+
+  <!-- 얼굴 인식 엔진 (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
