@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, setBusinessLocation, getStoredToken,
-  regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy,
+  regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getCurrentPosition } from '../../utils/geo'
@@ -40,6 +40,14 @@ export default function ManagerDashboard() {
   const [showLeavePolicyForm, setShowLeavePolicyForm] = useState(false)
   const [showHolidayPayForm, setShowHolidayPayForm] = useState(false)
 
+  // 출근 SMS 알림
+  const [smsEnabled, setSmsEnabled] = useState<boolean>(false)
+  const [notifyPhone, setNotifyPhone] = useState<string>('')
+  const [smsSaving, setSmsSaving] = useState(false)
+  const [smsError, setSmsError] = useState('')
+  const [smsStatus, setSmsStatus] = useState('')
+  const [showSmsForm, setShowSmsForm] = useState(false)
+
   // 위치 설정
   const [showLocationForm, setShowLocationForm] = useState(false)
   const [locationPin, setLocationPin] = useState('')
@@ -62,6 +70,8 @@ export default function ManagerDashboard() {
       setThresholdHours(th)
       setThresholdInput(String(th))
       setWeekStartDay(biz.week_start_day === 0 ? 0 : 1)
+      setSmsEnabled((biz.sms_notify_enabled ?? 0) === 1)
+      setNotifyPhone(biz.notify_phone ?? '')
     } finally { setLoading(false) }
   }, [slug])
 
@@ -196,6 +206,23 @@ export default function ManagerDashboard() {
       setLocationPin('')
     } catch (e: any) { setLocationError(e.message) }
     finally { setLocationSaving(false) }
+  }
+
+  const handleSaveSmsNotify = async () => {
+    setSmsError(''); setSmsStatus('')
+    const digits = notifyPhone.replace(/[^0-9]/g, '')
+    if (smsEnabled && (digits.length < 10 || digits.length > 11)) {
+      setSmsError('알림을 켜려면 올바른 휴대폰 번호를 입력하세요'); return
+    }
+    setSmsSaving(true)
+    try {
+      const res = await updateSmsNotify(slug, { notify_phone: digits || null, sms_notify_enabled: smsEnabled })
+      setSmsEnabled((res.sms_notify_enabled ?? 0) === 1)
+      setNotifyPhone(res.notify_phone ?? '')
+      setSmsStatus('저장되었습니다')
+      await load()
+    } catch (e: any) { setSmsError(e?.message || '저장 실패') }
+    finally { setSmsSaving(false) }
   }
 
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
@@ -511,6 +538,56 @@ export default function ManagerDashboard() {
               <p className="text-xs text-gray-500 leading-relaxed">
                 직원별 고유 링크로만 본인 페이지 접근 가능. 각자 본인 휴대폰으로 출퇴근 찍는 경우. 위 직원 카드의 "🔗 출근 링크 복사"로 직원에게 전달.
               </p>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 출근 SMS 알림 */}
+      <div className="mt-6 border-t border-gray-100 pt-6">
+        <button
+          onClick={() => { setShowSmsForm(v => !v); setSmsError(''); setSmsStatus('') }}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
+        >
+          <span>📲 출근 SMS 알림</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${smsEnabled && notifyPhone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+            {smsEnabled && notifyPhone ? 'ON' : 'OFF'}
+          </span>
+          <span className="ml-auto">{showSmsForm ? '▲' : '▼'}</span>
+        </button>
+
+        {showSmsForm && (
+          <div className="mt-4 bg-gray-50 rounded-2xl p-4 flex flex-col gap-3">
+            <p className="text-xs text-gray-400 leading-relaxed">
+              직원이 출근을 찍으면 아래 번호로 출근 알림 문자가 발송됩니다. 문자 발송에 실패해도 출근 기록은 정상 저장됩니다.
+            </p>
+
+            <button
+              onClick={() => setSmsEnabled(v => !v)}
+              className={`flex items-center justify-between w-full px-4 py-3 rounded-xl border transition ${smsEnabled ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'}`}
+            >
+              <span className="text-sm font-semibold text-gray-700">출근 알림 문자 받기</span>
+              <span className={`w-11 h-6 rounded-full relative transition ${smsEnabled ? 'bg-green-500' : 'bg-gray-300'}`}>
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${smsEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+              </span>
+            </button>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">받는 번호 (사업주 휴대폰)</label>
+              <input
+                type="tel" inputMode="numeric" value={notifyPhone}
+                onChange={e => setNotifyPhone(e.target.value)}
+                placeholder="01012345678"
+                className="w-full border border-gray-200 bg-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
+              <p className="text-xs text-gray-400 mt-1">하이픈 없이 숫자만 입력해도 됩니다.</p>
+            </div>
+
+            {smsStatus && <p className="text-xs text-green-600 font-semibold">{smsStatus}</p>}
+            {smsError && <p className="text-red-500 text-xs">{smsError}</p>}
+
+            <button onClick={handleSaveSmsNotify} disabled={smsSaving}
+              className="w-full py-3 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600 transition disabled:opacity-50">
+              {smsSaving ? '저장 중...' : '저장'}
             </button>
           </div>
         )}

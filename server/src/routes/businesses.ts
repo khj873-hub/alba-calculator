@@ -29,13 +29,13 @@ export default async function businessesRoutes(app: FastifyInstance) {
 
   // 전체 사업장 목록 (PIN 미포함)
   app.get('/api/businesses', async () => {
-    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day FROM businesses ORDER BY created_at DESC').all()
+    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled FROM businesses ORDER BY created_at DESC').all()
   })
 
   // 사업장 존재 확인 (PIN 미포함)
   app.get<{ Params: { slug: string } }>(
     '/api/businesses/:slug', async (req, reply) => {
-      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day FROM businesses WHERE slug = ?').get(req.params.slug)
+      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       return biz
     }
@@ -98,6 +98,42 @@ export default async function businessesRoutes(app: FastifyInstance) {
       params.push(req.params.slug)
       db.prepare(`UPDATE businesses SET ${updates.join(', ')} WHERE slug = ?`).run(...params)
       const updated = db.prepare('SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day FROM businesses WHERE slug = ?').get(req.params.slug)
+      return { ok: true, ...updated as object }
+    }
+  )
+
+  // 출근 SMS 알림 설정 (관리자 세션 인증)
+  app.patch<{ Params: { slug: string }; Body: { notify_phone?: string | null; sms_notify_enabled?: boolean } }>(
+    '/api/businesses/:slug/sms-notify', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const biz = db.prepare('SELECT id, notify_phone FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+
+      const { notify_phone, sms_notify_enabled } = req.body
+      const updates: string[] = []
+      const params: any[] = []
+
+      // 최종적으로 적용될 수신번호 (이번 요청에 없으면 기존값 유지)
+      let finalPhone: string | null = biz.notify_phone ?? null
+      if (notify_phone !== undefined) {
+        const digits = (notify_phone ?? '').replace(/[^0-9]/g, '')
+        if (digits && (digits.length < 10 || digits.length > 11)) {
+          return reply.code(400).send({ error: '올바른 휴대폰 번호를 입력하세요 (10~11자리)' })
+        }
+        finalPhone = digits || null
+        updates.push('notify_phone = ?'); params.push(finalPhone)
+      }
+      if (sms_notify_enabled !== undefined) {
+        // 수신번호 없이 알림을 켤 수 없음
+        if (sms_notify_enabled && !finalPhone) {
+          return reply.code(400).send({ error: '알림을 켜려면 받는 번호를 먼저 입력하세요' })
+        }
+        updates.push('sms_notify_enabled = ?'); params.push(sms_notify_enabled ? 1 : 0)
+      }
+      if (updates.length === 0) return reply.code(400).send({ error: '변경할 항목이 없습니다' })
+
+      params.push(req.params.slug)
+      db.prepare(`UPDATE businesses SET ${updates.join(', ')} WHERE slug = ?`).run(...params)
+      const updated = db.prepare('SELECT notify_phone, sms_notify_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
       return { ok: true, ...updated as object }
     }
   )
