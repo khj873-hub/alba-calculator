@@ -15,7 +15,8 @@
     "dotenv": "^16.4.5",
     "fastify": "^4.28.1",
     "google-auth-library": "^10.6.2",
-    "resend": "^6.12.4"
+    "resend": "^6.12.4",
+    "solapi": "^6.0.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",

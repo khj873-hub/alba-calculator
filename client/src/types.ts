@@ -17,6 +17,8 @@ export interface Business {
   time_off_enabled?: number
   weekly_holiday_threshold_hours?: number
   week_start_day?: number  // 1=월요일, 0=일요일
+  notify_phone?: string | null
+  sms_notify_enabled?: number  // 1=출근 SMS 알림 ON
 }
 
 export interface TimeOffRecord {

@@ -147,6 +147,13 @@ const migrate = db.transaction(() => {
   if (!bizColsV3.find((c: any) => c.name === 'week_start_day')) {
     db.exec('ALTER TABLE businesses ADD COLUMN week_start_day INTEGER NOT NULL DEFAULT 1')
   }
+  // 출근 SMS 알림 — 사업주 수신번호 + 기능 ON/OFF (기본 OFF, 사업장별 opt-in)
+  if (!bizColsV3.find((c: any) => c.name === 'notify_phone')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN notify_phone TEXT')
+  }
+  if (!bizColsV3.find((c: any) => c.name === 'sms_notify_enabled')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN sms_notify_enabled INTEGER NOT NULL DEFAULT 0')
+  }
   // time_off 테이블이 구 스키마(half_period NULL 허용)면 신 스키마로 재생성
   const toExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='time_off'").get() as any
   if (toExists) {
@@ -232,6 +239,19 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_inquiry_status ON inquiries(status);
   CREATE INDEX IF NOT EXISTS idx_inquiry_created ON inquiries(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS notification_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,                 -- 'sms' | 'alimtalk'
+    to_phone TEXT NOT NULL,
+    template TEXT,                         -- 'check_in' | 'test' 등
+    message TEXT NOT NULL,
+    status TEXT NOT NULL,                  -- 'sent' | 'failed' | 'skipped'
+    provider_id TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_notiflog_created ON notification_logs(created_at DESC);
 `)
 
 // 토큰 헬퍼 (employees INSERT 시 사용)

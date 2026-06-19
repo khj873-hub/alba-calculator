@@ -2,6 +2,31 @@ import { FastifyInstance } from 'fastify'
 import { db } from '../db'
 import { requireManagerAuth, getValidSession } from '../middleware/auth'
 import { splitByMidnight } from '../utils/segments'
+import { notifyCheckIn } from '../utils/notify'
+
+// 출근 알림(SMS) 발송 — 출근 처리와 완전히 분리.
+// 어떤 이유로 실패하든 예외를 밖으로 던지지 않아 출근 기록에 영향이 없다.
+// 사업장이 알림을 켜고(sms_notify_enabled=1) 수신번호(notify_phone)가 있을 때만 발송.
+async function sendCheckInNotification(employeeId: number, clockInTime: string) {
+  try {
+    const row = db.prepare(`
+      SELECT e.name AS employee_name, b.name AS business_name,
+             b.notify_phone AS notify_phone, b.sms_notify_enabled AS sms_notify_enabled
+      FROM employees e JOIN businesses b ON b.id = e.business_id
+      WHERE e.id = ?
+    `).get(employeeId) as any
+    if (!row) return
+    if (row.sms_notify_enabled !== 1 || !row.notify_phone) return // opt-in 사업장만
+    await notifyCheckIn({
+      employeeName: row.employee_name,
+      clockInTime,
+      ownerPhone: row.notify_phone,
+      businessName: row.business_name,
+    })
+  } catch (e: any) {
+    console.error('[attendance] 출근 알림 발송 중 예외(무시):', e?.message || e)
+  }
+}
 
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -89,7 +114,13 @@ export default async function attendanceRoutes(app: FastifyInstance) {
 
       const now = nowKST()
       const result = db.prepare('INSERT INTO attendance (employee_id, clock_in) VALUES (?, ?)').run(empId, now)
-      return db.prepare('SELECT * FROM attendance WHERE id = ?').get(result.lastInsertRowid)
+      const record = db.prepare('SELECT * FROM attendance WHERE id = ?').get(result.lastInsertRowid)
+
+      // 사업주 출근 알림 — fire-and-forget. 발송 결과를 기다리지 않아 출근 응답이 지연되지 않고,
+      // 실패해도 sendCheckInNotification 내부에서 삼켜 출근 처리에 영향이 없다.
+      void sendCheckInNotification(empId, now)
+
+      return record
     }
   )
 

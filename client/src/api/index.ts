@@ -74,6 +74,14 @@ export const updateLeavePolicy = (slug: string, body: { leave_pay_calc_mode?: Le
     getStoredToken(slug)
   )
 
+// 출근 SMS 알림 설정 (관리자 세션 인증)
+export const updateSmsNotify = (slug: string, body: { notify_phone?: string | null; sms_notify_enabled?: boolean }) =>
+  req<{ ok: boolean; notify_phone: string | null; sms_notify_enabled: number }>(
+    `/businesses/${slug}/sms-notify`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+    getStoredToken(slug)
+  )
+
 // 휴가 (조회: 인증 불필요 / 등록·삭제: 관리자 세션)
 export const fetchTimeOff = (slug: string, year: number, month: number, employee_id?: number) => {
   const params = new URLSearchParams({ year: String(year), month: String(month) })
