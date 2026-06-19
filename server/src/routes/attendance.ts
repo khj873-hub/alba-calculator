@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { db } from '../db'
 import { requireManagerAuth, getValidSession } from '../middleware/auth'
 import { splitByMidnight } from '../utils/segments'
-import { notifyCheckIn } from '../utils/notify'
+import { notifyCheckIn, notifyCheckOut } from '../utils/notify'
 
 // 출근 알림(SMS) 발송 — 출근 처리와 완전히 분리.
 // 어떤 이유로 실패하든 예외를 밖으로 던지지 않아 출근 기록에 영향이 없다.
@@ -25,6 +25,28 @@ async function sendCheckInNotification(employeeId: number, clockInTime: string) 
     })
   } catch (e: any) {
     console.error('[attendance] 출근 알림 발송 중 예외(무시):', e?.message || e)
+  }
+}
+
+// 퇴근 알림(SMS) 발송 — 출근 알림과 동일하게 퇴근 처리와 완전히 분리.
+async function sendCheckOutNotification(employeeId: number, clockOutTime: string) {
+  try {
+    const row = db.prepare(`
+      SELECT e.name AS employee_name, b.name AS business_name,
+             b.notify_phone AS notify_phone, b.sms_notify_enabled AS sms_notify_enabled
+      FROM employees e JOIN businesses b ON b.id = e.business_id
+      WHERE e.id = ?
+    `).get(employeeId) as any
+    if (!row) return
+    if (row.sms_notify_enabled !== 1 || !row.notify_phone) return // opt-in 사업장만
+    await notifyCheckOut({
+      employeeName: row.employee_name,
+      clockOutTime,
+      ownerPhone: row.notify_phone,
+      businessName: row.business_name,
+    })
+  } catch (e: any) {
+    console.error('[attendance] 퇴근 알림 발송 중 예외(무시):', e?.message || e)
   }
 }
 
@@ -142,6 +164,11 @@ export default async function attendanceRoutes(app: FastifyInstance) {
 
       const now = nowKST()
       db.prepare('UPDATE attendance SET clock_out = ? WHERE id = ?').run(now, record.id)
+
+      // 사업주 퇴근 알림 — 출근과 동일한 fire-and-forget. 발송 결과를 기다리지 않고,
+      // 실패해도 sendCheckOutNotification 내부에서 삼켜 퇴근 처리에 영향이 없다.
+      void sendCheckOutNotification(empId, now)
+
       return db.prepare('SELECT * FROM attendance WHERE id = ?').get(record.id)
     }
   )

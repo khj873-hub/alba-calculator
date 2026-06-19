@@ -26,3 +26,23 @@ export async function notifyCheckIn(p: CheckInNotifyParams): Promise<NotifyResul
   const text = buildCheckInText(p)
   return sendSms({ to: p.ownerPhone, text, template: 'check_in' })
 }
+
+export interface CheckOutNotifyParams {
+  employeeName: string
+  clockOutTime: string // 'YYYY-MM-DD HH:mm:ss' (KST)
+  ownerPhone: string // 사업주(수신) 번호
+  businessName?: string
+}
+
+// 퇴근 알림 메시지 본문
+function buildCheckOutText(p: CheckOutNotifyParams): string {
+  const hhmm = p.clockOutTime.length >= 16 ? p.clockOutTime.slice(11, 16) : p.clockOutTime
+  const prefix = p.businessName ? `[${p.businessName}] ` : '[퍼펙트 근태관리] '
+  return `${prefix}${p.employeeName}님이 ${hhmm}에 퇴근했습니다.`
+}
+
+// 퇴근 알림 발송.
+export async function notifyCheckOut(p: CheckOutNotifyParams): Promise<NotifyResult> {
+  const text = buildCheckOutText(p)
+  return sendSms({ to: p.ownerPhone, text, template: 'check_out' })
+}
