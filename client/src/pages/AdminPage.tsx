@@ -43,6 +43,8 @@ interface AdminBiz {
   owner_name: string | null
   owner_last_login: string | null
   employee_count: number
+  notify_phone: string | null
+  sms_notify_enabled: number
 }
 
 // YYYY-MM-DD KST 오늘
@@ -114,6 +116,10 @@ export default function AdminPage() {
   // owner 변경
   const [editOwnerSlug, setEditOwnerSlug] = useState<string | null>(null)
   const [editOwnerEmail, setEditOwnerEmail] = useState('')
+
+  // 출근 SMS 수신번호 인라인 편집
+  const [editSmsSlug, setEditSmsSlug] = useState<string | null>(null)
+  const [editSmsPhone, setEditSmsPhone] = useState('')
 
   // 탭 + 문의 내역
   const [tab, setTab] = useState<AdminTab>('businesses')
@@ -208,6 +214,37 @@ export default function AdminPage() {
       setEditOwnerSlug(null); setEditOwnerEmail('')
       await load()
     } catch (e: any) { alert(`변경 실패: ${e.message}`) }
+  }
+
+  const handleSmsSave = async (slug: string) => {
+    const digits = editSmsPhone.replace(/[^0-9]/g, '')
+    if (digits && (digits.length < 10 || digits.length > 11)) {
+      alert('올바른 휴대폰 번호를 입력하세요 (10~11자리)')
+      return
+    }
+    try {
+      await adminApi(`/admin/businesses/${slug}/sms-notify`, {
+        method: 'PATCH',
+        body: JSON.stringify({ notify_phone: digits || null }),
+      })
+      setEditSmsSlug(null); setEditSmsPhone('')
+      await load()
+    } catch (e: any) { alert(`번호 저장 실패: ${e.message}`) }
+  }
+
+  const handleToggleSms = async (b: AdminBiz) => {
+    const next = b.sms_notify_enabled === 1 ? false : true
+    if (next && !b.notify_phone) {
+      alert('알림을 켜려면 받는 번호를 먼저 등록하세요')
+      return
+    }
+    try {
+      await adminApi(`/admin/businesses/${b.slug}/sms-notify`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sms_notify_enabled: next }),
+      })
+      await load()
+    } catch (e: any) { alert(`알림 설정 실패: ${e.message}`) }
   }
 
   const handleOwnerClear = async (slug: string) => {
@@ -455,6 +492,7 @@ export default function AdminPage() {
                   <th className="text-left px-4 py-3">slug</th>
                   <th className="text-left px-4 py-3">사업장명</th>
                   <th className="text-left px-4 py-3">직원</th>
+                  <th className="text-left px-4 py-3">출근 SMS</th>
                   <th className="text-left px-4 py-3">Owner</th>
                   <th className="text-left px-4 py-3">최근 로그인</th>
                   <th className="text-left px-4 py-3">생성일</th>
@@ -525,6 +563,42 @@ export default function AdminPage() {
                     <td className="px-4 py-3 font-semibold">{b.name}</td>
                     <td className="px-4 py-3 text-gray-500">{b.employee_count}</td>
                     <td className="px-4 py-3">
+                      {editSmsSlug === b.slug ? (
+                        <div className="flex gap-1.5 items-center">
+                          <input value={editSmsPhone} onChange={e => setEditSmsPhone(e.target.value)}
+                            placeholder="01012345678" type="tel" inputMode="numeric"
+                            className="w-32 border border-gray-300 rounded-lg px-2 py-1 text-xs" />
+                          <button onClick={() => handleSmsSave(b.slug)}
+                            className="text-xs bg-blue-600 text-white px-2 py-1 rounded-lg">저장</button>
+                          <button onClick={() => { setEditSmsSlug(null); setEditSmsPhone('') }}
+                            className="text-xs text-gray-400">취소</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          {b.notify_phone ? (
+                            <>
+                              <button
+                                onClick={() => handleToggleSms(b)}
+                                className={`text-xs font-bold px-2 py-1 rounded-lg border transition ${
+                                  b.sms_notify_enabled === 1
+                                    ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                                    : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                                }`}
+                                title="클릭해서 출근 SMS 알림 ON/OFF"
+                              >
+                                {b.sms_notify_enabled === 1 ? '🔔 ON' : '🔕 OFF'}
+                              </button>
+                              <span className="text-xs text-gray-600 font-mono">{b.notify_phone}</span>
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-400">미등록</span>
+                          )}
+                          <button onClick={() => { setEditSmsSlug(b.slug); setEditSmsPhone(b.notify_phone || '') }}
+                            className="text-xs text-blue-500 hover:text-blue-700 ml-1">수정</button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       {editOwnerSlug === b.slug ? (
                         <div className="flex gap-2 items-center">
                           <input value={editOwnerEmail} onChange={e => setEditOwnerEmail(e.target.value)}
@@ -564,7 +638,7 @@ export default function AdminPage() {
                   </tr>
                 ))}
                 {bizList.length === 0 && (
-                  <tr><td colSpan={9} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
+                  <tr><td colSpan={10} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
                 )}
               </tbody>
             </table>
