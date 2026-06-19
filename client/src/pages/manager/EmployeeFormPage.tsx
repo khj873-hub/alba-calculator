@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { fetchEmployees, createEmployee, updateEmployee } from '../../api'
+import { fetchEmployees, createEmployee, updateEmployee, PlanLimitError } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 
 const COLORS = [
@@ -22,6 +22,7 @@ export default function EmployeeFormPage() {
   const [payIncludesHoliday, setPayIncludesHoliday] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [planLimit, setPlanLimit] = useState<PlanLimitError | null>(null)
 
   // 주휴 환산 별도 시급 (포함 시급 ÷ 1.2, 주 40h 기준)
   const equivalentBase = payIncludesHoliday && hourlyRate > 0 ? Math.floor(hourlyRate / 1.2) : 0
@@ -50,11 +51,40 @@ export default function EmployeeFormPage() {
         await createEmployee(slug, { name, hourly_rate: hourlyRate, color, pay_enabled: payEnabled, pay_includes_holiday: payIncludesHoliday })
       }
       navigate(`/${slug}/manager`)
-    } catch (e: any) { setError(e.message); setSaving(false) }
+    } catch (e: any) {
+      if (e instanceof PlanLimitError) { setPlanLimit(e); setSaving(false); return }
+      setError(e.message); setSaving(false)
+    }
   }
 
   return (
     <div>
+      {planLimit && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setPlanLimit(null)}>
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="text-3xl mb-3">🚀</div>
+            <h3 className="font-extrabold text-gray-800 text-lg mb-2">플랜 한도에 도달했어요</h3>
+            <p className="text-sm text-gray-600 leading-relaxed mb-4">
+              현재 플랜은 활성 직원 <b>{planLimit.limit}명</b>까지예요 (현재 {planLimit.active}명).
+              더 등록하려면 아래 중 하나를 선택하세요.
+            </p>
+            <ul className="text-sm text-gray-600 list-disc pl-5 mb-5 space-y-1">
+              <li>그만둔 직원을 <b>퇴사 처리</b>하면 자리가 비어 바로 등록할 수 있어요.</li>
+              <li>직원이 더 필요하면 <b>플랜 업그레이드</b>를 문의하세요.</li>
+            </ul>
+            <div className="flex flex-col gap-2">
+              <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
+                className="w-full text-center py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition">
+                플랜 업그레이드 문의
+              </a>
+              <button onClick={() => { setPlanLimit(null); navigate(`/${slug}/manager`) }}
+                className="w-full py-3 rounded-xl bg-gray-100 text-gray-600 font-semibold text-sm hover:bg-gray-200 transition">
+                직원 목록에서 퇴사 처리하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => navigate(`/${slug}/manager`)} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
         <h2 className="text-lg font-extrabold text-gray-800">{isEdit ? '직원 수정' : '직원 추가'}</h2>

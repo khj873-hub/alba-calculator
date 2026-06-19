@@ -19,6 +19,7 @@ export interface Business {
   week_start_day?: number  // 1=월요일, 0=일요일
   notify_phone?: string | null
   sms_notify_enabled?: number  // 1=출근 SMS 알림 ON
+  plan?: string  // 'free' | 'paid' — 활성 인원 한도 결정
 }
 
 export interface TimeOffRecord {

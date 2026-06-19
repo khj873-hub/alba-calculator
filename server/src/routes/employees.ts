@@ -1,10 +1,36 @@
 import { FastifyInstance } from 'fastify'
 import { db, generateAccessToken } from '../db'
 import { requireManagerAuth } from '../middleware/auth'
+import { activeLimit, getPlan } from '../plans'
 
 function getBizId(slug: string): number | null {
   const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(slug) as any
   return biz?.id ?? null
+}
+
+function getBiz(slug: string): { id: number; plan: string } | null {
+  const biz = db.prepare('SELECT id, plan FROM businesses WHERE slug = ?').get(slug) as any
+  return biz ? { id: biz.id, plan: biz.plan ?? 'free' } : null
+}
+
+function countActive(bizId: number): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM employees WHERE business_id = ? AND status = 'active'").get(bizId) as any).n
+}
+
+// 활성 인원 한도 초과 여부. 초과면 표준화된 403 응답 객체 반환, 여유 있으면 null.
+function planLimitBlock(plan: string, bizId: number) {
+  const limit = activeLimit(plan)
+  if (limit === null) return null // 무제한
+  if (countActive(bizId) >= limit) {
+    return {
+      error: `현재 플랜(${getPlan(plan).label}) 활성 인원 ${limit}명을 초과했습니다. 기존 직원을 퇴사 처리하거나 플랜을 업그레이드하세요.`,
+      code: 'PLAN_LIMIT',
+      plan,
+      limit,
+      active: countActive(bizId),
+    }
+  }
+  return null
 }
 
 function attachStatus(e: any) {
@@ -38,10 +64,14 @@ export default async function employeesRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { slug: string }; Body: { name: string; hourly_rate: number; color: string; pay_enabled?: boolean; pay_includes_holiday?: boolean } }>(
     '/api/:slug/employees', { preHandler: requireManagerAuth }, async (req, reply) => {
-      const bizId = getBizId(req.params.slug)
-      if (!bizId) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      const biz = getBiz(req.params.slug)
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      const bizId = biz.id
       const { name, hourly_rate, color, pay_enabled, pay_includes_holiday } = req.body
       if (!name?.trim()) return reply.code(400).send({ error: '이름을 입력하세요' })
+      // 플랜 활성 인원 한도 체크 (신규 직원은 active 로 추가되므로 등록 전 검사)
+      const block = planLimitBlock(biz.plan, bizId)
+      if (block) return reply.code(403).send(block)
       const token = generateAccessToken()
       const result = db.prepare(
         'INSERT INTO employees (business_id, name, hourly_rate, color, access_token, pay_enabled, pay_includes_holiday) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -99,14 +129,16 @@ export default async function employeesRoutes(app: FastifyInstance) {
     }
   )
 
-  // 복원 (재직) — 퇴사자를 다시 활성으로. 활성 카운트에 다시 포함됨.
+  // 복원 (재직) — 퇴사자를 다시 활성으로. 활성 카운트에 다시 포함되므로 한도 체크.
   app.post<{ Params: { slug: string; id: string } }>(
     '/api/:slug/employees/:id/restore', { preHandler: requireManagerAuth }, async (req, reply) => {
-      const bizId = getBizId(req.params.slug)
-      if (!bizId) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      const biz = getBiz(req.params.slug)
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       const id = Number(req.params.id)
-      const exists = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, bizId)
+      const exists = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, biz.id)
       if (!exists) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+      const block = planLimitBlock(biz.plan, biz.id)
+      if (block) return reply.code(403).send(block)
       db.prepare("UPDATE employees SET status = 'active', resigned_at = NULL WHERE id = ?").run(id)
       return db.prepare('SELECT * FROM employees WHERE id = ?').get(id)
     }

@@ -29,13 +29,13 @@ export default async function businessesRoutes(app: FastifyInstance) {
 
   // 전체 사업장 목록 (PIN 미포함)
   app.get('/api/businesses', async () => {
-    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled FROM businesses ORDER BY created_at DESC').all()
+    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled, plan FROM businesses ORDER BY created_at DESC').all()
   })
 
   // 사업장 존재 확인 (PIN 미포함)
   app.get<{ Params: { slug: string } }>(
     '/api/businesses/:slug', async (req, reply) => {
-      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
+      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled, plan FROM businesses WHERE slug = ?').get(req.params.slug)
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       return biz
     }

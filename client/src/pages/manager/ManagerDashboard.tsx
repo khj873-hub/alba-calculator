@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, resignEmployee, restoreEmployee,
-  setBusinessLocation, getStoredToken,
+  setBusinessLocation, getStoredToken, planActiveLimit, PlanLimitError,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
@@ -98,10 +98,16 @@ export default function ManagerDashboard() {
     catch (e: any) { setError(e.message) }
   }
 
-  // 복원 — 퇴사자를 다시 재직으로
+  // 복원 — 퇴사자를 다시 재직으로 (한도 초과 시 막힘)
   const handleRestore = async (emp: Employee) => {
     try { await restoreEmployee(slug, emp.id); await load() }
-    catch (e: any) { setError(e.message) }
+    catch (e: any) {
+      if (e instanceof PlanLimitError) {
+        setError(`${e.message} (현재 활성 ${e.active}명 / 한도 ${e.limit}명)`)
+        return
+      }
+      setError(e.message)
+    }
   }
 
   // 완전 삭제 — 기록 없는 오등록 직원만 (서버에서 기록 있으면 거부)
@@ -247,6 +253,8 @@ export default function ManagerDashboard() {
   const resignedEmployees = employees.filter(e => e.status === 'resigned')
   const working = activeEmployees.filter(e => e.is_working)
   const hasLocation = !!(business?.lat && business?.lng)
+  const limit = planActiveLimit(business?.plan)            // null = 무제한
+  const atLimit = limit !== null && activeEmployees.length >= limit
 
   return (
     <div>
@@ -254,7 +262,9 @@ export default function ManagerDashboard() {
         <div>
           <h2 className="font-extrabold text-gray-800">직원 관리</h2>
           <p className="text-xs text-gray-400 font-semibold mt-0.5">
-            활성 {activeEmployees.length}명
+            <span className={atLimit ? 'text-red-500' : ''}>
+              활성 {activeEmployees.length}{limit !== null ? `/${limit}` : ''}명
+            </span>
             {working.length > 0 && <span className="text-green-600 ml-1">· 출근 중 {working.length}명</span>}
             {resignedEmployees.length > 0 && <span className="text-gray-300 ml-1">· 퇴사 {resignedEmployees.length}명</span>}
           </p>

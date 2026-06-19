@@ -35,11 +35,14 @@
 - [ ] 재입사 처리: 신규 추가 vs 기존 복원
 - [ ] 기존 사업장 grandfathering (이미 활성 직원이 한도 초과인 곳은 유예)
 
-## 7. 구현 단위 (개발 착수 시)
-- **P1**: `employees.status` 컬럼(마이그레이션) + 퇴사/복원 UI + 활성 카운트 표시
-- **P2**: 플랜별 한도 정의 + 등록 시 한도 체크 + 초과 안내 모달
-- **P3**: 기능 게이트(알림톡·GPS·PDF 등 플랜 연동) + 업그레이드 유도 UI
-- **P4**: 운영자 콘솔 플랜·한도 관리 확장 (기존 plan free/paid 토글 확장)
+## 7. 구현 단위 (진행 상황)
+- **P1 ✅완료**: `employees.status`/`resigned_at` 마이그레이션 + 퇴사/복원 UI + 활성 카운트 표시
+- **P2 ✅완료**: `plans.ts`(plan→활성한도) + 등록·복원 시 한도 체크(403 PLAN_LIMIT) + 업그레이드 모달(EmployeeFormPage) + 대시보드 "활성 N/M명" 표시
+  - **free 한도 = 3명**(server/src/plans.ts + client PLAN_ACTIVE_LIMIT). 변경 시 두 곳 동기화.
+  - 업그레이드 CTA는 카카오 채널 문의로 연결(자체 결제 플로우 없음 → 추후).
+- **P3 (예정)**: 기능 게이트(알림톡·GPS·PDF 등 플랜 연동) + 업그레이드 유도 UI
+- **P4 (예정)**: 운영자 콘솔 플랜·한도 관리 확장 (기존 plan free/paid 토글 확장)
+  - 다단계 플랜(베이직/프로)은 현재 free/paid 2단계 → 확장 시 plans.ts + businesses.plan 값 추가
 
 ## 8. 기존 코드 연계 메모
 - `businesses.plan`(free/paid) 이미 있음 → 다단계 플랜으로 확장

@@ -22,6 +22,21 @@ export class ServiceSuspendedError extends Error {
   constructor(message: string) { super(message); this.name = 'ServiceSuspendedError' }
 }
 
+// 플랜 활성 인원 한도 초과 (등록·복원 차단). 업그레이드 유도 UI 트리거용.
+export class PlanLimitError extends Error {
+  plan: string; limit: number; active: number
+  constructor(message: string, plan: string, limit: number, active: number) {
+    super(message); this.name = 'PlanLimitError'
+    this.plan = plan; this.limit = limit; this.active = active
+  }
+}
+
+// 클라이언트용 플랜 한도 (표시용 — 서버 plans.ts 와 동일하게 유지)
+export const PLAN_ACTIVE_LIMIT: Record<string, number | null> = { free: 3, paid: null }
+export function planActiveLimit(plan?: string): number | null {
+  return plan && plan in PLAN_ACTIVE_LIMIT ? PLAN_ACTIVE_LIMIT[plan] : PLAN_ACTIVE_LIMIT.free
+}
+
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {
   // body가 있을 때만 Content-Type 지정 (Fastify는 body 없는데 Content-Type:json이면
   // FST_ERR_CTP_EMPTY_JSON_BODY 400 반환 — DELETE without body가 여기 해당)
@@ -37,6 +52,9 @@ async function req<T>(url: string, options?: RequestInit, sessionToken?: string)
     const err = await res.json().catch(() => ({ error: '오류가 발생했습니다' }))
     if (res.status === 403 && err.error === 'service_suspended') {
       throw new ServiceSuspendedError(err.message || '서비스 이용이 일시 제한되었습니다.')
+    }
+    if (res.status === 403 && err.code === 'PLAN_LIMIT') {
+      throw new PlanLimitError(err.error || '플랜 한도를 초과했습니다.', err.plan, err.limit, err.active)
     }
     if (res.status === 401) {
       throw new Error('관리자 인증이 만료됐습니다. 페이지를 새로고침한 뒤 PIN을 다시 입력해주세요.')
