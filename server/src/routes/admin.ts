@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db, hashPin } from '../db'
 import { requireAdminAuth } from '../middleware/auth'
+import { planAllows } from '../plans'
 
 function generateSlug(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -85,7 +86,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 사장님 셀프(/api/businesses/:slug/sms-notify, requireManagerAuth)와 동일 검증.
   app.patch<{ Params: { slug: string }; Body: { notify_phone?: string | null; sms_notify_enabled?: boolean } }>(
     '/api/admin/businesses/:slug/sms-notify', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id, notify_phone FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = db.prepare('SELECT id, notify_phone, plan FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
 
       const { notify_phone, sms_notify_enabled } = req.body
@@ -103,6 +104,13 @@ export default async function adminRoutes(app: FastifyInstance) {
         updates.push('notify_phone = ?'); params.push(finalPhone)
       }
       if (sms_notify_enabled !== undefined) {
+        // 알림은 유료 전용 — 무료 플랜이면 먼저 요금제를 paid 로 바꿔야 켤 수 있음
+        if (sms_notify_enabled && !planAllows(biz.plan, 'notifications')) {
+          return reply.code(403).send({
+            error: '무료 플랜 사업장입니다. 요금제를 유료로 변경한 뒤 알림을 켜주세요.',
+            code: 'PLAN_FEATURE', feature: 'notifications', plan: biz.plan ?? 'free',
+          })
+        }
         if (sms_notify_enabled && !finalPhone) {
           return reply.code(400).send({ error: '알림을 켜려면 받는 번호를 먼저 입력하세요' })
         }

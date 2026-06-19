@@ -36,6 +36,10 @@ export const PLAN_ACTIVE_LIMIT: Record<string, number | null> = { free: 3, paid:
 export function planActiveLimit(plan?: string): number | null {
   return plan && plan in PLAN_ACTIVE_LIMIT ? PLAN_ACTIVE_LIMIT[plan] : PLAN_ACTIVE_LIMIT.free
 }
+// 출퇴근 알림(SMS/카카오)은 유료 전용 (서버 plans.ts features.notifications 와 동일)
+export function planHasNotifications(plan?: string): boolean {
+  return plan === 'paid'
+}
 
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {
   // body가 있을 때만 Content-Type 지정 (Fastify는 body 없는데 Content-Type:json이면

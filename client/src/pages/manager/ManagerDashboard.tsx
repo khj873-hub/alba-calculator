@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, resignEmployee, restoreEmployee,
-  setBusinessLocation, getStoredToken, planActiveLimit, PlanLimitError,
+  setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, PlanLimitError,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
@@ -255,6 +255,7 @@ export default function ManagerDashboard() {
   const hasLocation = !!(business?.lat && business?.lng)
   const limit = planActiveLimit(business?.plan)            // null = 무제한
   const atLimit = limit !== null && activeEmployees.length >= limit
+  const notifAllowed = planHasNotifications(business?.plan) // 출퇴근 알림은 유료 전용
 
   return (
     <div>
@@ -620,14 +621,33 @@ export default function ManagerDashboard() {
           onClick={() => { setShowSmsForm(v => !v); setSmsError(''); setSmsStatus('') }}
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
         >
-          <span>📲 출근 SMS 알림</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${smsEnabled && notifyPhone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-            {smsEnabled && notifyPhone ? 'ON' : 'OFF'}
-          </span>
+          <span>📲 출퇴근 알림 (SMS·카카오톡)</span>
+          {notifAllowed ? (
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${smsEnabled && notifyPhone ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+              {smsEnabled && notifyPhone ? 'ON' : 'OFF'}
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 rounded-full font-bold ml-1 bg-amber-100 text-amber-700">🔒 유료</span>
+          )}
           <span className="ml-auto">{showSmsForm ? '▲' : '▼'}</span>
         </button>
 
-        {showSmsForm && (
+        {showSmsForm && !notifAllowed && (
+          <div className="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
+            <div className="text-2xl mb-2">🔒</div>
+            <p className="text-sm font-bold text-gray-800 mb-1">유료 플랜 기능이에요</p>
+            <p className="text-xs text-gray-500 leading-relaxed mb-4">
+              직원이 출퇴근을 찍으면 사장님 휴대폰으로 알림(SMS·카카오톡)이 갑니다.
+              유료 플랜으로 업그레이드하면 켤 수 있어요.
+            </p>
+            <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
+              className="inline-block px-5 py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm hover:bg-amber-600 transition">
+              플랜 업그레이드 문의
+            </a>
+          </div>
+        )}
+
+        {showSmsForm && notifAllowed && (
           <div className="mt-4 bg-gray-50 rounded-2xl p-4 flex flex-col gap-3">
             <p className="text-xs text-gray-400 leading-relaxed">
               직원이 출근을 찍으면 아래 번호로 출근 알림 문자가 발송됩니다. 문자 발송에 실패해도 출근 기록은 정상 저장됩니다.

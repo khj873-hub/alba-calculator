@@ -3,6 +3,7 @@ import { db } from '../db'
 import { requireManagerAuth, getValidSession } from '../middleware/auth'
 import { splitByMidnight } from '../utils/segments'
 import { notifyCheckIn, notifyCheckOut } from '../utils/notify'
+import { planAllows } from '../plans'
 
 // 출근 알림(SMS) 발송 — 출근 처리와 완전히 분리.
 // 어떤 이유로 실패하든 예외를 밖으로 던지지 않아 출근 기록에 영향이 없다.
@@ -10,13 +11,14 @@ import { notifyCheckIn, notifyCheckOut } from '../utils/notify'
 async function sendCheckInNotification(employeeId: number, clockInTime: string) {
   try {
     const row = db.prepare(`
-      SELECT e.name AS employee_name, b.name AS business_name,
+      SELECT e.name AS employee_name, b.name AS business_name, b.plan AS plan,
              b.notify_phone AS notify_phone, b.sms_notify_enabled AS sms_notify_enabled
       FROM employees e JOIN businesses b ON b.id = e.business_id
       WHERE e.id = ?
     `).get(employeeId) as any
     if (!row) return
     if (row.sms_notify_enabled !== 1 || !row.notify_phone) return // opt-in 사업장만
+    if (!planAllows(row.plan, 'notifications')) return // 유료 전용 — 무료 플랜은 발송 안 함(비용 방지)
     await notifyCheckIn({
       employeeName: row.employee_name,
       clockInTime,
@@ -32,13 +34,14 @@ async function sendCheckInNotification(employeeId: number, clockInTime: string) 
 async function sendCheckOutNotification(employeeId: number, clockOutTime: string) {
   try {
     const row = db.prepare(`
-      SELECT e.name AS employee_name, b.name AS business_name,
+      SELECT e.name AS employee_name, b.name AS business_name, b.plan AS plan,
              b.notify_phone AS notify_phone, b.sms_notify_enabled AS sms_notify_enabled
       FROM employees e JOIN businesses b ON b.id = e.business_id
       WHERE e.id = ?
     `).get(employeeId) as any
     if (!row) return
     if (row.sms_notify_enabled !== 1 || !row.notify_phone) return // opt-in 사업장만
+    if (!planAllows(row.plan, 'notifications')) return // 유료 전용 — 무료 플랜은 발송 안 함(비용 방지)
     await notifyCheckOut({
       employeeName: row.employee_name,
       clockOutTime,

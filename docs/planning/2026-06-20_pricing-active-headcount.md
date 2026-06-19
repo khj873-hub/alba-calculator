@@ -40,7 +40,10 @@
 - **P2 ✅완료**: `plans.ts`(plan→활성한도) + 등록·복원 시 한도 체크(403 PLAN_LIMIT) + 업그레이드 모달(EmployeeFormPage) + 대시보드 "활성 N/M명" 표시
   - **free 한도 = 3명**(server/src/plans.ts + client PLAN_ACTIVE_LIMIT). 변경 시 두 곳 동기화.
   - 업그레이드 CTA는 카카오 채널 문의로 연결(자체 결제 플로우 없음 → 추후).
-- **P3 (예정)**: 기능 게이트(알림톡·GPS·PDF 등 플랜 연동) + 업그레이드 유도 UI
+- **P3 (진행 중)**: 기능 게이트(플랜 연동) + 업그레이드 유도 UI
+  - ✅ **출퇴근 알림(SMS·카카오톡) 유료 전용** — plans.ts features.notifications. 2중 잠금: 무료는 켜기 403(PLAN_FEATURE, manager+admin) + 발송 시점 게이트(무료면 미발송, 비용 방지). 무료 UI는 🔒 잠금 카드 + 업그레이드 CTA.
+    - ⚠️ grandfathering: 무료인데 sms_enabled=1이던 기존 사업장은 배포 후 **발송 중단**(send 게이트). 플래그는 남아도 무해(게이트가 막음).
+  - (예정) GPS·PDF·다매장 게이트
 - **P4 (예정)**: 운영자 콘솔 플랜·한도 관리 확장 (기존 plan free/paid 토글 확장)
   - 다단계 플랜(베이직/프로)은 현재 free/paid 2단계 → 확장 시 plans.ts + businesses.plan 값 추가
 

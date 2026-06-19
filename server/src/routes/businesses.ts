@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db, hashPin, verifyPinHash } from '../db'
 import { requireManagerAuth } from '../middleware/auth'
+import { planAllows } from '../plans'
 
 function generateSlug(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -105,7 +106,7 @@ export default async function businessesRoutes(app: FastifyInstance) {
   // 출근 SMS 알림 설정 (관리자 세션 인증)
   app.patch<{ Params: { slug: string }; Body: { notify_phone?: string | null; sms_notify_enabled?: boolean } }>(
     '/api/businesses/:slug/sms-notify', { preHandler: requireManagerAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id, notify_phone FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = db.prepare('SELECT id, notify_phone, plan FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
 
       const { notify_phone, sms_notify_enabled } = req.body
@@ -123,6 +124,13 @@ export default async function businessesRoutes(app: FastifyInstance) {
         updates.push('notify_phone = ?'); params.push(finalPhone)
       }
       if (sms_notify_enabled !== undefined) {
+        // 알림은 유료 전용 — 무료 플랜은 켤 수 없음
+        if (sms_notify_enabled && !planAllows(biz.plan, 'notifications')) {
+          return reply.code(403).send({
+            error: '출퇴근 알림은 유료 플랜에서 사용할 수 있어요. 플랜을 업그레이드해주세요.',
+            code: 'PLAN_FEATURE', feature: 'notifications', plan: biz.plan ?? 'free',
+          })
+        }
         // 수신번호 없이 알림을 켤 수 없음
         if (sms_notify_enabled && !finalPhone) {
           return reply.code(400).send({ error: '알림을 켜려면 받는 번호를 먼저 입력하세요' })
