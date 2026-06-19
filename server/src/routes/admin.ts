@@ -18,6 +18,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     return db.prepare(`
       SELECT b.id, b.slug, b.name, b.created_at, b.time_off_enabled,
              b.is_active, b.suspended_at, b.plan, b.plan_expires_at,
+             b.notify_phone, b.sms_notify_enabled,
              u.id AS owner_user_id, u.email AS owner_email, u.name AS owner_name,
              u.last_login_at AS owner_last_login,
              (SELECT COUNT(*) FROM employees WHERE business_id = b.id) AS employee_count
@@ -77,6 +78,42 @@ export default async function adminRoutes(app: FastifyInstance) {
       db.prepare('UPDATE businesses SET is_active = ?, suspended_at = ? WHERE slug = ?')
         .run(active, suspendedAt, req.params.slug)
       return { ok: true, is_active: active, suspended_at: suspendedAt }
+    }
+  )
+
+  // 출근 SMS 알림 설정 (운영자가 사업장 대신 수신번호 일괄 등록)
+  // 사장님 셀프(/api/businesses/:slug/sms-notify, requireManagerAuth)와 동일 검증.
+  app.patch<{ Params: { slug: string }; Body: { notify_phone?: string | null; sms_notify_enabled?: boolean } }>(
+    '/api/admin/businesses/:slug/sms-notify', { preHandler: requireAdminAuth }, async (req, reply) => {
+      const biz = db.prepare('SELECT id, notify_phone FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장 없음' })
+
+      const { notify_phone, sms_notify_enabled } = req.body
+      const updates: string[] = []
+      const params: any[] = []
+
+      // 최종 적용될 수신번호 (이번 요청에 없으면 기존값 유지)
+      let finalPhone: string | null = biz.notify_phone ?? null
+      if (notify_phone !== undefined) {
+        const digits = (notify_phone ?? '').replace(/[^0-9]/g, '')
+        if (digits && (digits.length < 10 || digits.length > 11)) {
+          return reply.code(400).send({ error: '올바른 휴대폰 번호를 입력하세요 (10~11자리)' })
+        }
+        finalPhone = digits || null
+        updates.push('notify_phone = ?'); params.push(finalPhone)
+      }
+      if (sms_notify_enabled !== undefined) {
+        if (sms_notify_enabled && !finalPhone) {
+          return reply.code(400).send({ error: '알림을 켜려면 받는 번호를 먼저 입력하세요' })
+        }
+        updates.push('sms_notify_enabled = ?'); params.push(sms_notify_enabled ? 1 : 0)
+      }
+      if (updates.length === 0) return reply.code(400).send({ error: '변경할 항목이 없습니다' })
+
+      params.push(req.params.slug)
+      db.prepare(`UPDATE businesses SET ${updates.join(', ')} WHERE slug = ?`).run(...params)
+      const updated = db.prepare('SELECT notify_phone, sms_notify_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
+      return { ok: true, ...updated as object }
     }
   )
 
