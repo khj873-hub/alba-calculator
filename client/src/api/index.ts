@@ -104,6 +104,10 @@ export const updateEmployee = (slug: string, id: number, body: { name: string; h
   req<Employee>(`/${slug}/employees/${id}`, { method: 'PUT', body: JSON.stringify(body) }, getStoredToken(slug))
 export const deleteEmployee = (slug: string, id: number) =>
   req<{ ok: boolean }>(`/${slug}/employees/${id}`, { method: 'DELETE' }, getStoredToken(slug))
+export const resignEmployee = (slug: string, id: number) =>
+  req<Employee>(`/${slug}/employees/${id}/resign`, { method: 'POST', body: JSON.stringify({}) }, getStoredToken(slug))
+export const restoreEmployee = (slug: string, id: number) =>
+  req<Employee>(`/${slug}/employees/${id}/restore`, { method: 'POST', body: JSON.stringify({}) }, getStoredToken(slug))
 export const regenerateEmployeeToken = (slug: string, id: number) =>
   req<{ ok: boolean; access_token: string }>(`/${slug}/employees/${id}/regenerate-token`, {
     method: 'POST', body: JSON.stringify({})

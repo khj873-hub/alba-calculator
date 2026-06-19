@@ -104,6 +104,15 @@ const migrate = db.transaction(() => {
   if (empColsV4.length > 0 && !empColsV4.find((c: any) => c.name === 'pay_includes_holiday')) {
     db.exec('ALTER TABLE employees ADD COLUMN pay_includes_holiday INTEGER NOT NULL DEFAULT 0')
   }
+
+  // 직원 재직/퇴사 상태 — 요금제 활성 인원 카운트의 토대.
+  // 퇴사는 soft 처리(레코드 보존: 임금대장·근태 조회 가능, 활성 카운트에서만 제외).
+  const empColsV5 = db.prepare('PRAGMA table_info(employees)').all() as any[]
+  if (empColsV5.length > 0 && !empColsV5.find((c: any) => c.name === 'status')) {
+    db.exec("ALTER TABLE employees ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    db.exec('ALTER TABLE employees ADD COLUMN resigned_at TEXT')
+  }
+
   const bizColsAfter = db.prepare('PRAGMA table_info(businesses)').all() as any[]
   if (!bizColsAfter.find((c: any) => c.name === 'home_mode')) {
     db.exec("ALTER TABLE businesses ADD COLUMN home_mode TEXT NOT NULL DEFAULT 'kiosk'")
@@ -194,6 +203,8 @@ db.exec(`
     access_token TEXT,
     pay_enabled INTEGER NOT NULL DEFAULT 1,
     pay_includes_holiday INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',
+    resigned_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   );
 

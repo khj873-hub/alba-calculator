@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, setBusinessLocation, getStoredToken,
+  fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, resignEmployee, restoreEmployee,
+  setBusinessLocation, getStoredToken,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
@@ -38,6 +39,7 @@ export default function ManagerDashboard() {
   const [weekStartDay, setWeekStartDay] = useState<0 | 1>(1)
   const [leavePolicySaving, setLeavePolicySaving] = useState(false)
   const [showLeavePolicyForm, setShowLeavePolicyForm] = useState(false)
+  const [showResigned, setShowResigned] = useState(false)
   const [showHolidayPayForm, setShowHolidayPayForm] = useState(false)
 
   // 출근 SMS 알림
@@ -89,8 +91,22 @@ export default function ManagerDashboard() {
     finally { setActionId(null) }
   }
 
+  // 퇴사 처리 (soft) — 기록은 보존되고 활성 인원에서만 빠짐
+  const handleResign = async (emp: Employee) => {
+    if (!confirm(`${emp.name} 직원을 퇴사 처리할까요?\n근태·급여 기록은 그대로 보존되며, 활성 인원에서만 제외됩니다. 나중에 복원할 수 있어요.`)) return
+    try { await resignEmployee(slug, emp.id); await load() }
+    catch (e: any) { setError(e.message) }
+  }
+
+  // 복원 — 퇴사자를 다시 재직으로
+  const handleRestore = async (emp: Employee) => {
+    try { await restoreEmployee(slug, emp.id); await load() }
+    catch (e: any) { setError(e.message) }
+  }
+
+  // 완전 삭제 — 기록 없는 오등록 직원만 (서버에서 기록 있으면 거부)
   const handleDelete = async (emp: Employee) => {
-    if (!confirm(`${emp.name} 직원을 삭제하시겠어요? 모든 근태 기록도 삭제됩니다.`)) return
+    if (!confirm(`${emp.name} 직원을 완전히 삭제할까요?\n복구할 수 없습니다. (근태 기록이 있으면 삭제되지 않고 퇴사 처리를 권장합니다)`)) return
     try { await deleteEmployee(slug, emp.id); await load() }
     catch (e: any) { setError(e.message) }
   }
@@ -227,7 +243,9 @@ export default function ManagerDashboard() {
 
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
 
-  const working = employees.filter(e => e.is_working)
+  const activeEmployees = employees.filter(e => e.status !== 'resigned')
+  const resignedEmployees = employees.filter(e => e.status === 'resigned')
+  const working = activeEmployees.filter(e => e.is_working)
   const hasLocation = !!(business?.lat && business?.lng)
 
   return (
@@ -235,9 +253,11 @@ export default function ManagerDashboard() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="font-extrabold text-gray-800">직원 관리</h2>
-          {working.length > 0 && (
-            <p className="text-xs text-green-600 font-semibold mt-0.5">출근 중 {working.length}명</p>
-          )}
+          <p className="text-xs text-gray-400 font-semibold mt-0.5">
+            활성 {activeEmployees.length}명
+            {working.length > 0 && <span className="text-green-600 ml-1">· 출근 중 {working.length}명</span>}
+            {resignedEmployees.length > 0 && <span className="text-gray-300 ml-1">· 퇴사 {resignedEmployees.length}명</span>}
+          </p>
         </div>
         <button
           onClick={() => navigate(`/${slug}/manager/employees/new`)}
@@ -254,9 +274,13 @@ export default function ManagerDashboard() {
           <div className="text-5xl mb-4">👤</div>
           <p className="text-sm">직원을 추가해보세요</p>
         </div>
+      ) : activeEmployees.length === 0 ? (
+        <div className="text-center py-10 text-gray-400">
+          <p className="text-sm">활성 직원이 없습니다. 직원을 추가하거나 아래에서 퇴사자를 복원하세요.</p>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {employees.map((emp) => (
+          {activeEmployees.map((emp) => (
             <div key={emp.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-extrabold text-lg shrink-0"
@@ -273,8 +297,9 @@ export default function ManagerDashboard() {
                 <div className="flex items-center gap-1">
                   <button onClick={() => navigate(`/${slug}/manager/employees/${emp.id}/edit`)}
                     className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-50 transition text-sm">✏️</button>
-                  <button onClick={() => handleDelete(emp)}
-                    className="text-gray-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition text-sm">🗑</button>
+                  <button onClick={() => handleResign(emp)}
+                    title="퇴사 처리 (기록 보존)"
+                    className="text-xs font-semibold text-gray-400 hover:text-red-500 px-2 py-1.5 rounded-lg hover:bg-red-50 transition">퇴사</button>
                 </div>
               </div>
 
@@ -315,6 +340,42 @@ export default function ManagerDashboard() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 퇴사자 (보존, 읽기전용) */}
+      {resignedEmployees.length > 0 && (
+        <div className="mt-6">
+          <button
+            onClick={() => setShowResigned(v => !v)}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 font-semibold transition w-full"
+          >
+            <span>👋 퇴사자 {resignedEmployees.length}명</span>
+            <span className="ml-auto">{showResigned ? '▲' : '▼'}</span>
+          </button>
+          {showResigned && (
+            <div className="flex flex-col gap-2 mt-3">
+              {resignedEmployees.map((emp) => (
+                <div key={emp.id} className="bg-gray-50 rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 opacity-60"
+                    style={{ background: emp.color }}>
+                    {emp.name[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-500 text-sm">{emp.name}</div>
+                    <div className="text-xs text-gray-400">
+                      {emp.resigned_at ? `${emp.resigned_at.slice(0, 10)} 퇴사` : '퇴사'} · 기록 보존됨
+                    </div>
+                  </div>
+                  <button onClick={() => handleRestore(emp)}
+                    className="text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg px-3 py-1.5 transition">복원</button>
+                  <button onClick={() => handleDelete(emp)}
+                    title="완전 삭제 (기록 없는 경우만 가능)"
+                    className="text-xs text-gray-300 hover:text-red-500 px-2 py-1.5 transition">🗑</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

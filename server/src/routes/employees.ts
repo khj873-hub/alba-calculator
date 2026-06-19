@@ -82,6 +82,37 @@ export default async function employeesRoutes(app: FastifyInstance) {
     }
   )
 
+  // 퇴사 처리 (soft) — 레코드 보존, 활성 카운트에서 제외. 근무 중이면 거부.
+  app.post<{ Params: { slug: string; id: string } }>(
+    '/api/:slug/employees/:id/resign', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const bizId = getBizId(req.params.slug)
+      if (!bizId) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      const id = Number(req.params.id)
+      const exists = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, bizId)
+      if (!exists) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+      const working = db.prepare(
+        'SELECT id FROM attendance WHERE employee_id = ? AND clock_out IS NULL LIMIT 1'
+      ).get(id)
+      if (working) return reply.code(409).send({ error: '근무 중인 직원입니다. 퇴근 처리 후 퇴사할 수 있어요.' })
+      db.prepare("UPDATE employees SET status = 'resigned', resigned_at = datetime('now','localtime') WHERE id = ?").run(id)
+      return db.prepare('SELECT * FROM employees WHERE id = ?').get(id)
+    }
+  )
+
+  // 복원 (재직) — 퇴사자를 다시 활성으로. 활성 카운트에 다시 포함됨.
+  app.post<{ Params: { slug: string; id: string } }>(
+    '/api/:slug/employees/:id/restore', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const bizId = getBizId(req.params.slug)
+      if (!bizId) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      const id = Number(req.params.id)
+      const exists = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, bizId)
+      if (!exists) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+      db.prepare("UPDATE employees SET status = 'active', resigned_at = NULL WHERE id = ?").run(id)
+      return db.prepare('SELECT * FROM employees WHERE id = ?').get(id)
+    }
+  )
+
+  // 완전 삭제 — 근태 기록이 있으면 거부(법적 보관). 기록 없는 오등록만 삭제 가능.
   app.delete<{ Params: { slug: string; id: string } }>(
     '/api/:slug/employees/:id', { preHandler: requireManagerAuth }, async (req, reply) => {
       const bizId = getBizId(req.params.slug)
@@ -89,6 +120,10 @@ export default async function employeesRoutes(app: FastifyInstance) {
       const id = Number(req.params.id)
       const exists = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, bizId)
       if (!exists) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+      const hasRecord = db.prepare('SELECT id FROM attendance WHERE employee_id = ? LIMIT 1').get(id)
+      if (hasRecord) {
+        return reply.code(409).send({ error: '근태 기록이 있는 직원은 삭제할 수 없습니다. 퇴사 처리로 보존하세요.' })
+      }
       db.prepare('DELETE FROM employees WHERE id = ?').run(id)
       return { ok: true }
     }

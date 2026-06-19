@@ -43,6 +43,8 @@ export interface Employee {
   access_token: string
   pay_enabled: number
   pay_includes_holiday: number  // 1=시급에 주휴수당 포함(포괄임금), 0=별도 지급(기본)
+  status: 'active' | 'resigned'  // 재직/퇴사 — 요금제 활성 인원 카운트 기준
+  resigned_at: string | null
   created_at: string
   is_working: boolean
   clock_in: string | null
