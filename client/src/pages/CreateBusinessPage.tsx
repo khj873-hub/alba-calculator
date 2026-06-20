@@ -137,7 +137,6 @@ export default function CreateBusinessPage() {
         <h2 className="text-lg font-extrabold text-gray-800 text-center mb-1">요금제 안내</h2>
         <p className="text-sm text-gray-400 text-center mb-6">무료로 시작하고, 필요할 때 업그레이드하세요</p>
         <PricingPlans
-          onFree={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           onInquire={() => window.open(KAKAO_URL, '_blank', 'noopener,noreferrer')}
         />
         <p className="text-xs text-gray-400 mt-5 text-center">

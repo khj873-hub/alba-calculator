@@ -11,7 +11,8 @@ const PLANS = [
     feats: ['프로 기능 전체', '직원 수 제한 없음'], note: '다점포·대형 사업장', cta: '엔터프라이즈 문의하기' },
 ]
 
-export default function PricingPlans({ onFree, onInquire }: { onFree: () => void; onInquire: (type: string) => void }) {
+// onFree 미전달 시 무료 카드 버튼을 숨긴다(예: 이미 가입 화면인 /create).
+export default function PricingPlans({ onFree, onInquire }: { onFree?: () => void; onInquire: (type: string) => void }) {
   return (
     <div className="flex flex-col gap-4">
       {PLANS.map(p => (
@@ -42,14 +43,14 @@ export default function PricingPlans({ onFree, onInquire }: { onFree: () => void
             >
               {p.cta} →
             </button>
-          ) : (
+          ) : onFree ? (
             <button
               onClick={onFree}
               className="w-full py-3 rounded-xl font-bold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
             >
               {p.cta} →
             </button>
-          )}
+          ) : null}
         </div>
       ))}
     </div>
