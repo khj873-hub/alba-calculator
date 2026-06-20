@@ -18,7 +18,7 @@ export function isAdminEmail(email: string): boolean {
 }
 
 // OAuth state(=CSRF token) 임시 저장.
-type StateCtx = { slug?: string; admin?: boolean; createdAt: number }
+type StateCtx = { slug?: string; admin?: boolean; signup?: boolean; createdAt: number }
 const stateStore = new Map<string, StateCtx>()
 function pruneStates() {
   const now = Date.now()
@@ -48,13 +48,14 @@ export default async function oauthRoutes(app: FastifyInstance) {
   // 1) 로그인 시작 — 구글 OAuth URL로 redirect
   // - ?slug=xxx → 매니저(사장) 흐름
   // - ?admin=1 → 운영자 흐름 (콜백에서 ADMIN_EMAILS 매칭 확인)
-  app.get<{ Querystring: { slug?: string; admin?: string } }>('/api/auth/google/start', async (req, reply) => {
+  app.get<{ Querystring: { slug?: string; admin?: string; signup?: string } }>('/api/auth/google/start', async (req, reply) => {
     if (!oauthEnabled()) {
       return reply.code(503).send({ error: '구글 로그인이 설정되지 않았습니다 (서버 환경변수 미설정)' })
     }
     const isAdmin = req.query.admin === '1'
+    const isSignup = req.query.signup === '1' // 신규 사업장 가입 — 구글 신원확인 먼저
     const slug = (req.query.slug || '').trim()
-    if (!isAdmin && !slug) return reply.code(400).send({ error: 'slug 또는 admin=1 필요' })
+    if (!isAdmin && !isSignup && !slug) return reply.code(400).send({ error: 'slug 또는 admin=1 또는 signup=1 필요' })
 
     // 매니저 흐름 — 정지된 사업장은 OAuth 자체 거부
     if (!isAdmin && slug) {
@@ -66,7 +67,7 @@ export default async function oauthRoutes(app: FastifyInstance) {
 
     pruneStates()
     const state = randomBytes(16).toString('hex')
-    stateStore.set(state, { slug: isAdmin ? undefined : slug, admin: isAdmin, createdAt: Date.now() })
+    stateStore.set(state, { slug: (isAdmin || isSignup) ? undefined : slug, admin: isAdmin, signup: isSignup, createdAt: Date.now() })
 
     const redirectUri = `${PUBLIC_ORIGIN}/api/auth/google/callback`
     const params = new URLSearchParams({
@@ -139,6 +140,18 @@ export default async function oauthRoutes(app: FastifyInstance) {
         ).run('google', payload.sub, payload.email, payload.name || null, payload.picture || null, nowKST())
         userId = Number(result.lastInsertRowid)
       }
+    }
+
+    // 신규 가입 흐름: 구글 신원확인 완료 → 1회용 signup 토큰 발급 후 /create 로 복귀
+    // (사업장명·PIN은 아직 미입력. 프런트에서 입력받아 createBusiness에 토큰과 함께 제출)
+    if (ctx.signup) {
+      db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
+      const signupToken = randomBytes(24).toString('hex')
+      db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
+        .run(signupToken, `__signup__:${userId}`, expiresKST(1))
+      return reply.redirect(
+        `${PUBLIC_ORIGIN}/create#signup=${signupToken}&email=${encodeURIComponent(payload.email)}`
+      )
     }
 
     // 어드민 흐름: ADMIN_EMAILS와 매칭 확인

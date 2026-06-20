@@ -3,6 +3,11 @@ import { db, hashPin, verifyPinHash } from '../db'
 import { requireManagerAuth } from '../middleware/auth'
 import { planAllows } from '../plans'
 
+// 세션 만료 비교용 KST 문자열 (다른 라우트와 동일 규칙: UTC+9, 'YYYY-MM-DD HH:MM:SS')
+function nowKST(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+}
+
 function generateSlug(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -14,16 +19,36 @@ function generateSlug(): string {
 }
 
 export default async function businessesRoutes(app: FastifyInstance) {
-  // 사업장 생성
-  app.post<{ Body: { name: string; manager_pin: string } }>(
+  // 사업장 생성 — 신규 가입은 구글 신원확인(signup_token) 필수 + 소유자(owner) 연결.
+  // PIN은 병행(일상·키오스크용). signup_token은 구글 OAuth signup 흐름에서 발급된 1회용.
+  app.post<{ Body: { name: string; manager_pin: string; signup_token?: string } }>(
     '/api/businesses', async (req, reply) => {
-      const { name, manager_pin } = req.body
+      const { name, manager_pin, signup_token } = req.body
       if (!name?.trim()) return reply.code(400).send({ error: '사업장명을 입력하세요' })
       if (!manager_pin || manager_pin.length < 4) return reply.code(400).send({ error: 'PIN은 4자리 이상이어야 합니다' })
+
+      // 구글 신원확인 토큰 검증 → owner 결정 (1회용)
+      let ownerUserId: number | null = null
+      if (signup_token) {
+        const row = db.prepare('SELECT slug FROM sessions WHERE token = ? AND expires_at > ?')
+          .get(signup_token, nowKST()) as any
+        if (row && typeof row.slug === 'string' && row.slug.startsWith('__signup__:')) {
+          ownerUserId = Number(row.slug.split(':')[1]) || null
+          db.prepare('DELETE FROM sessions WHERE token = ?').run(signup_token) // 1회 소진
+        }
+      }
+      if (!ownerUserId) {
+        return reply.code(403).send({
+          error: '구글 로그인으로 본인 확인 후 사업장을 만들 수 있어요.',
+          code: 'SIGNUP_GOOGLE_REQUIRED',
+        })
+      }
+
       const slug = generateSlug()
       const hashedPin = hashPin(manager_pin)
-      // time_off_enabled는 DB DEFAULT 0이지만 명시적으로 OFF 보장
-      db.prepare('INSERT INTO businesses (slug, name, manager_pin, time_off_enabled) VALUES (?, ?, ?, 0)').run(slug, name.trim(), hashedPin)
+      // owner_user_id 연결 + time_off_enabled 명시적 OFF
+      db.prepare('INSERT INTO businesses (slug, name, manager_pin, owner_user_id, time_off_enabled) VALUES (?, ?, ?, ?, 0)')
+        .run(slug, name.trim(), hashedPin, ownerUserId)
       return { slug, name: name.trim() }
     }
   )

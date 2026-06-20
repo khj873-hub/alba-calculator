@@ -98,7 +98,7 @@ async function req<T>(url: string, options?: RequestInit, sessionToken?: string)
 // 사업장
 export const fetchBusinesses = () =>
   req<Business[]>('/businesses')
-export const createBusiness = (body: { name: string; manager_pin: string }) =>
+export const createBusiness = (body: { name: string; manager_pin: string; signup_token?: string }) =>
   req<{ slug: string; name: string }>('/businesses', { method: 'POST', body: JSON.stringify(body) })
 export const fetchBusiness = (slug: string) =>
   req<Business>(`/businesses/${slug}`)
