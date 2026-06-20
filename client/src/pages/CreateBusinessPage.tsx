@@ -70,10 +70,11 @@ export default function CreateBusinessPage() {
           </div>
           <button
             onClick={startGoogle}
-            className="w-full bg-white border border-gray-300 text-gray-700 font-bold py-4 rounded-2xl text-base hover:bg-gray-50 transition flex items-center justify-center gap-2"
+            className="w-full bg-green-500 text-white font-extrabold py-5 rounded-2xl text-lg hover:bg-green-600 active:scale-[0.99] transition shadow-xl shadow-green-200 flex items-center justify-center gap-2"
           >
-            <span className="text-lg">🟦</span> 구글로 사업장 만들기
+            <span className="text-xl">🏢</span> 새 사업자 등록하기 →
           </button>
+          <p className="text-xs text-gray-400 text-center mt-2.5">구글 계정으로 본인 확인 후 진행됩니다</p>
         </div>
       ) : (
         // 2단계: 사업장명 + PIN
