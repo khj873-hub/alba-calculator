@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createBusiness } from '../api'
+import PricingPlans from '../components/PricingPlans'
+
+const KAKAO_URL = 'https://pf.kakao.com/_xdwVxjX'
 
 export default function CreateBusinessPage() {
   const [name, setName] = useState('')
@@ -129,18 +132,17 @@ export default function CreateBusinessPage() {
         </form>
       )}
 
-      {/* 유료 플랜 문의 */}
-      <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-        <p className="text-sm text-gray-500 mb-1">유료 플랜(직원 5명↑ · 알림 · GPS · 명세서 출력)이 필요하세요?</p>
-        <a
-          href="https://pf.kakao.com/_xdwVxjX"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-bold text-green-600 underline underline-offset-2 hover:text-green-700"
-        >
-          유료 플랜 문의하기 →
-        </a>
-        <p className="text-xs text-gray-400 mt-2">무료로 먼저 시작한 뒤 언제든 업그레이드할 수 있어요.</p>
+      {/* 요금제 안내 */}
+      <div className="mt-10 pt-8 border-t border-gray-100">
+        <h2 className="text-lg font-extrabold text-gray-800 text-center mb-1">요금제 안내</h2>
+        <p className="text-sm text-gray-400 text-center mb-6">무료로 시작하고, 필요할 때 업그레이드하세요</p>
+        <PricingPlans
+          onFree={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          onInquire={() => window.open(KAKAO_URL, '_blank', 'noopener,noreferrer')}
+        />
+        <p className="text-xs text-gray-400 mt-5 text-center">
+          유료 플랜은 문의 주시면 운영자가 빠르게 설정해드려요. 무료로 먼저 시작 후 언제든 업그레이드 가능합니다.
+        </p>
       </div>
     </div>
   )
