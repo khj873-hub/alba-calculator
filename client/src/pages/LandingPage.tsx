@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchBusiness, ServiceSuspendedError } from '../api'
 import InquiryForm from '../components/InquiryForm'
@@ -22,6 +22,16 @@ export default function LandingPage() {
     setInquiryPlan(type)
     setTimeout(() => document.getElementById('inquiry')?.scrollIntoView({ behavior: 'smooth' }), 50)
   }
+
+  // 다른 페이지(/create 등)에서 ?inquiry=<플랜>으로 들어오면 문의 폼으로 이동 + 자동 선택
+  useEffect(() => {
+    const inq = new URLSearchParams(window.location.search).get('inquiry')
+    if (inq) {
+      setInquiryPlan(inq)
+      window.history.replaceState(null, '', '/')
+      setTimeout(() => document.getElementById('inquiry')?.scrollIntoView({ behavior: 'smooth' }), 200)
+    }
+  }, [])
 
   const handleEnter = async (e: React.FormEvent) => {
     e.preventDefault()

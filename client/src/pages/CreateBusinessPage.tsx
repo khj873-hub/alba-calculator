@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { createBusiness } from '../api'
 import PricingPlans from '../components/PricingPlans'
 
-const KAKAO_URL = 'https://pf.kakao.com/_xdwVxjX'
-
 export default function CreateBusinessPage() {
   const [name, setName] = useState('')
   const [pin, setPin] = useState('')
@@ -138,7 +136,7 @@ export default function CreateBusinessPage() {
         <h2 className="text-lg font-extrabold text-gray-800 text-center mb-1">요금제 안내</h2>
         <p className="text-sm text-gray-400 text-center mb-6">무료로 시작하고, 필요할 때 업그레이드하세요</p>
         <PricingPlans
-          onInquire={() => window.open(KAKAO_URL, '_blank', 'noopener,noreferrer')}
+          onInquire={(type) => navigate(`/?inquiry=${encodeURIComponent(type)}`)}
         />
         <p className="text-xs text-gray-400 mt-5 text-center">
           유료 플랜은 문의 주시면 운영자가 빠르게 설정해드려요. 무료로 먼저 시작 후 언제든 업그레이드 가능합니다.
