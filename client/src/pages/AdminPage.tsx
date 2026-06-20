@@ -54,6 +54,9 @@ interface AdminBiz {
   owner_name: string | null
   owner_last_login: string | null
   employee_count: number
+  active_employee_count: number
+  last_attendance: string | null
+  att7: number
   notify_phone: string | null
   sms_notify_enabled: number
 }
@@ -633,6 +636,7 @@ export default function AdminPage() {
                   <th className="text-left px-4 py-3">slug</th>
                   <th className="text-left px-4 py-3">사업장명</th>
                   <th className="text-left px-4 py-3">직원</th>
+                  <th className="text-left px-4 py-3 whitespace-nowrap">활동</th>
                   <th className="text-left px-4 py-3">출근 SMS</th>
                   <th className="text-left px-4 py-3">Owner</th>
                   <th className="text-left px-4 py-3">최근 로그인</th>
@@ -711,7 +715,19 @@ export default function AdminPage() {
                         className="mt-1 text-[11px] font-sans font-semibold text-gray-400 hover:text-blue-600 transition">🔑 PIN 재발급</button>
                     </td>
                     <td className="px-4 py-3 font-semibold">{b.name}</td>
-                    <td className="px-4 py-3 text-gray-500">{b.employee_count}</td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                      {b.active_employee_count}<span className="text-gray-300">/{b.employee_count}</span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {b.last_attendance ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs text-gray-600">최근 {b.last_attendance.slice(5, 10)}</span>
+                          <span className="text-[10px] text-gray-400">7일 {b.att7}건</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">사용 없음</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       {editSmsSlug === b.slug ? (
                         <div className="flex gap-1.5 items-center">
@@ -788,7 +804,7 @@ export default function AdminPage() {
                   </tr>
                 ))}
                 {bizList.length === 0 && (
-                  <tr><td colSpan={10} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
+                  <tr><td colSpan={11} className="text-center text-gray-400 py-10">사업장이 없습니다</td></tr>
                 )}
               </tbody>
             </table>

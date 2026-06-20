@@ -14,19 +14,23 @@ function generateSlug(): string {
 }
 
 export default async function adminRoutes(app: FastifyInstance) {
-  // 1) 모든 사업장 + owner 정보 목록
+  // 1) 모든 사업장 + owner + 업체별 활동(사용량) 목록
   app.get('/api/admin/businesses', { preHandler: requireAdminAuth }, async () => {
+    const cutoff7 = new Date(Date.now() + 9 * 60 * 60 * 1000 - 7 * 86400000).toISOString().replace('T', ' ').slice(0, 19)
     return db.prepare(`
       SELECT b.id, b.slug, b.name, b.created_at, b.time_off_enabled,
              b.is_active, b.suspended_at, b.plan, b.plan_expires_at,
              b.notify_phone, b.sms_notify_enabled,
              u.id AS owner_user_id, u.email AS owner_email, u.name AS owner_name,
              u.last_login_at AS owner_last_login,
-             (SELECT COUNT(*) FROM employees WHERE business_id = b.id) AS employee_count
+             (SELECT COUNT(*) FROM employees WHERE business_id = b.id) AS employee_count,
+             (SELECT COUNT(*) FROM employees WHERE business_id = b.id AND status = 'active') AS active_employee_count,
+             (SELECT MAX(a.clock_in) FROM attendance a JOIN employees e2 ON e2.id = a.employee_id WHERE e2.business_id = b.id) AS last_attendance,
+             (SELECT COUNT(*) FROM attendance a JOIN employees e2 ON e2.id = a.employee_id WHERE e2.business_id = b.id AND a.clock_in >= ?) AS att7
       FROM businesses b
       LEFT JOIN users u ON u.id = b.owner_user_id
       ORDER BY b.created_at DESC
-    `).all()
+    `).all(cutoff7)
   })
 
   // 요금제(plan) 변경
