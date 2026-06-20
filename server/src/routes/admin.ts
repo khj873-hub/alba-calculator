@@ -33,6 +33,55 @@ export default async function adminRoutes(app: FastifyInstance) {
     `).all(cutoff7)
   })
 
+  // 1-2) 업체별 상세 통계 (모달용)
+  app.get<{ Params: { slug: string } }>(
+    '/api/admin/businesses/:slug/detail-stats', { preHandler: requireAdminAuth }, async (req, reply) => {
+      const biz = db.prepare(
+        'SELECT id, slug, name, plan, created_at, is_active, notify_phone, owner_user_id FROM businesses WHERE slug = ?'
+      ).get(req.params.slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장 없음' })
+      const bizId = biz.id
+      const kst = (off = 0) => new Date(Date.now() + 9 * 60 * 60 * 1000 + off).toISOString().replace('T', ' ').slice(0, 19)
+      const todayStart = kst().slice(0, 10) + ' 00:00:00'
+      const c30 = kst(-30 * 86400000), c7 = kst(-7 * 86400000)
+      const one = (sql: string, ...p: any[]) => (db.prepare(sql).get(...p) as any)?.n ?? 0
+      const attBase = 'FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE e.business_id = ?'
+
+      const owner = biz.owner_user_id
+        ? (db.prepare('SELECT email FROM users WHERE id = ?').get(biz.owner_user_id) as any) : null
+      const empActive = one("SELECT COUNT(*) n FROM employees WHERE business_id = ? AND status = 'active'", bizId)
+      const empTotal = one('SELECT COUNT(*) n FROM employees WHERE business_id = ?', bizId)
+      const payEmployees = one("SELECT COUNT(*) n FROM employees WHERE business_id = ? AND status = 'active' AND pay_enabled = 1", bizId)
+      const workingNow = one(`SELECT COUNT(*) n ${attBase} AND a.clock_out IS NULL`, bizId)
+
+      const attToday = one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, todayStart)
+      const att7 = one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, c7)
+      const att30 = one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, c30)
+      const lastAt = (db.prepare(`SELECT MAX(a.clock_in) n ${attBase}`).get(bizId) as any)?.n ?? null
+      const daily30 = db.prepare(
+        `SELECT substr(a.clock_in,1,10) d, COUNT(*) n ${attBase} AND a.clock_in >= ? GROUP BY d ORDER BY d`
+      ).all(bizId, c30) as any[]
+
+      // SMS/알림 — notify_phone(숫자만) 매칭
+      const np = (biz.notify_phone || '').replace(/[^0-9]/g, '')
+      const sent30 = np ? one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND to_phone = ? AND created_at >= ?", np, c30) : 0
+      const byTemplate = np ? db.prepare(
+        "SELECT COALESCE(template,'기타') t, COUNT(*) n FROM notification_logs WHERE status = 'sent' AND to_phone = ? AND created_at >= ? GROUP BY t ORDER BY n DESC"
+      ).all(np, c30) as any[] : []
+
+      const timeoff30 = one('SELECT COUNT(*) n FROM time_off t JOIN employees e ON e.id = t.employee_id WHERE e.business_id = ? AND t.created_at >= ?', bizId, c30)
+      const timeoffTotal = one('SELECT COUNT(*) n FROM time_off t JOIN employees e ON e.id = t.employee_id WHERE e.business_id = ?', bizId)
+
+      return {
+        business: { name: biz.name, slug: biz.slug, plan: biz.plan, created_at: biz.created_at, is_active: biz.is_active, owner_email: owner?.email ?? null },
+        employees: { active: empActive, total: empTotal, pay_enabled: payEmployees, working_now: workingNow },
+        attendance: { today: attToday, last7: att7, last30: att30, last_at: lastAt, daily30 },
+        notifications: { sent30, byTemplate },
+        timeoff: { last30: timeoff30, total: timeoffTotal },
+      }
+    }
+  )
+
   // 요금제(plan) 변경
   app.patch<{ Params: { slug: string }; Body: { plan: string } }>(
     '/api/admin/businesses/:slug/plan', { preHandler: requireAdminAuth }, async (req, reply) => {

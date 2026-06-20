@@ -17,6 +17,14 @@ interface AdminStats {
   inquiries: { total: number; new: number; byType: { t: string; n: number }[] }
 }
 
+interface AdminBizDetail {
+  business: { name: string; slug: string; plan: string; created_at: string; is_active: number; owner_email: string | null }
+  employees: { active: number; total: number; pay_enabled: number; working_now: number }
+  attendance: { today: number; last7: number; last30: number; last_at: string | null; daily30: { d: string; n: number }[] }
+  notifications: { sent30: number; byTemplate: { t: string; n: number }[] }
+  timeoff: { last30: number; total: number }
+}
+
 interface AdminInquiry {
   id: number
   source: string | null
@@ -139,6 +147,14 @@ export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('businesses')
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
+  const [detailSlug, setDetailSlug] = useState<string | null>(null)
+  const [detail, setDetail] = useState<AdminBizDetail | null>(null)
+
+  const openDetail = async (slug: string) => {
+    setDetailSlug(slug); setDetail(null)
+    try { setDetail(await adminApi<AdminBizDetail>(`/admin/businesses/${slug}/detail-stats`)) }
+    catch (e: any) { setError(e.message); setDetailSlug(null) }
+  }
   const [inquiries, setInquiries] = useState<AdminInquiry[]>([])
   const [inqCounts, setInqCounts] = useState<{ status: string; n: number }[]>([])
   const [inqFilter, setInqFilter] = useState<InquiryStatus | 'all'>('new')
@@ -389,6 +405,80 @@ export default function AdminPage() {
 
       <main className="max-w-7xl mx-auto p-6">
         {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-4">{error}</div>}
+
+        {/* 업체별 상세 통계 모달 */}
+        {detailSlug && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setDetailSlug(null)}>
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl my-8" onClick={e => e.stopPropagation()}>
+              {!detail ? (
+                <p className="text-center text-gray-400 py-10">불러오는 중...</p>
+              ) : (
+                <div className="flex flex-col gap-5">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-lg font-extrabold text-gray-800">{detail.business.name}</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {detail.business.plan} · 가입 {detail.business.created_at?.slice(0, 10)}
+                        {detail.business.is_active === 0 && <span className="text-red-500 ml-1">· 정지</span>}
+                      </p>
+                      {detail.business.owner_email && <p className="text-xs text-gray-400">{detail.business.owner_email}</p>}
+                    </div>
+                    <button onClick={() => setDetailSlug(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+                  </div>
+
+                  {/* KPI */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: '활성/전체 직원', value: `${detail.employees.active}/${detail.employees.total}` },
+                      { label: '출근 중', value: detail.employees.working_now },
+                      { label: '급여 대상', value: detail.employees.pay_enabled },
+                      { label: '오늘 출퇴근', value: detail.attendance.today },
+                      { label: '7일 출퇴근', value: detail.attendance.last7 },
+                      { label: '30일 출퇴근', value: detail.attendance.last30 },
+                      { label: '30일 알림', value: detail.notifications.sent30 },
+                      { label: '30일 휴가등록', value: detail.timeoff.last30 },
+                      { label: '마지막 활동', value: detail.attendance.last_at ? detail.attendance.last_at.slice(5, 10) : '없음' },
+                    ].map(k => (
+                      <div key={k.label} className="bg-gray-50 rounded-xl p-3 text-center">
+                        <div className="text-[10px] text-gray-400 mb-0.5">{k.label}</div>
+                        <div className="text-base font-extrabold text-gray-800">{typeof k.value === 'number' ? k.value.toLocaleString() : k.value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 30일 출퇴근 추이 */}
+                  <div>
+                    <h4 className="text-xs font-extrabold text-gray-700 mb-2">최근 30일 출퇴근 추이</h4>
+                    {detail.attendance.daily30.length === 0 ? (
+                      <p className="text-xs text-gray-400">기록 없음</p>
+                    ) : (
+                      <div className="flex items-end gap-0.5 h-20">
+                        {(() => {
+                          const max = Math.max(...detail.attendance.daily30.map(d => d.n), 1)
+                          return detail.attendance.daily30.map(d => (
+                            <div key={d.d} className="flex-1 bg-blue-400 rounded-t" style={{ height: `${d.n / max * 100}%` }} title={`${d.d}: ${d.n}건`} />
+                          ))
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 알림 유형 */}
+                  {detail.notifications.byTemplate.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-extrabold text-gray-700 mb-2">알림 발송 (30일)</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {detail.notifications.byTemplate.map(t => (
+                          <span key={t.t} className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700">{t.t} · {t.n}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 탭 */}
         <div className="flex gap-1 mb-5 border-b border-gray-200">
@@ -714,7 +804,12 @@ export default function AdminPage() {
                         title="관리자 PIN 재발급 (분실 복구)"
                         className="mt-1 text-[11px] font-sans font-semibold text-gray-400 hover:text-blue-600 transition">🔑 PIN 재발급</button>
                     </td>
-                    <td className="px-4 py-3 font-semibold">{b.name}</td>
+                    <td className="px-4 py-3 font-semibold">
+                      <button onClick={() => openDetail(b.slug)}
+                        className="text-blue-700 hover:underline" title="상세 통계 보기">
+                        {b.name} 📊
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                       {b.active_employee_count}<span className="text-gray-300">/{b.employee_count}</span>
                     </td>
