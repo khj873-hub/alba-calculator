@@ -32,13 +32,13 @@ export class PlanLimitError extends Error {
 }
 
 // 클라이언트 플랜 표시 정보 (서버 plans.ts 와 동일하게 유지)
-export interface PlanDisplay { label: string; maxActive: number | null; monthlyPrice: number | null; notifications: boolean }
+export interface PlanDisplay { label: string; maxActive: number | null; monthlyPrice: number | null; notifications: boolean; gps: boolean; payslip: boolean }
 export const PLANS_DISPLAY: Record<string, PlanDisplay> = {
-  free:       { label: '무료',         maxActive: 3,    monthlyPrice: 0,     notifications: false },
-  basic:      { label: '베이직',       maxActive: 5,    monthlyPrice: 9900,  notifications: true },
-  pro:        { label: '프로',         maxActive: 20,   monthlyPrice: 29900, notifications: true },
-  enterprise: { label: '엔터프라이즈', maxActive: null, monthlyPrice: null,  notifications: true },
-  paid:       { label: '유료',         maxActive: null, monthlyPrice: null,  notifications: true },
+  free:       { label: '무료',         maxActive: 3,    monthlyPrice: 0,     notifications: false, gps: false, payslip: false },
+  basic:      { label: '베이직',       maxActive: 5,    monthlyPrice: 9900,  notifications: true,  gps: true,  payslip: true },
+  pro:        { label: '프로',         maxActive: 20,   monthlyPrice: 29900, notifications: true,  gps: true,  payslip: true },
+  enterprise: { label: '엔터프라이즈', maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true },
+  paid:       { label: '유료',         maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true },
 }
 // 유료 단계 목록 (업그레이드 안내용 — 무료/레거시 제외)
 export const UPGRADE_PLANS = ['basic', 'pro', 'enterprise']
@@ -51,6 +51,12 @@ export function planActiveLimit(plan?: string): number | null {
 // 출퇴근 알림(SMS/카카오)은 유료 전용
 export function planHasNotifications(plan?: string): boolean {
   return planInfo(plan).notifications
+}
+export function planHasGps(plan?: string): boolean {
+  return planInfo(plan).gps
+}
+export function planHasPayslip(plan?: string): boolean {
+  return planInfo(plan).payslip
 }
 // 업그레이드 플랜 요약 (모달/안내용): "베이직 10명 9,900원 · 프로 30명 29,900원 · 엔터프라이즈 무제한 별도문의"
 export function upgradePlanSummary(): string {

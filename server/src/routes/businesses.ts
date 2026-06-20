@@ -59,9 +59,16 @@ export default async function businessesRoutes(app: FastifyInstance) {
   app.patch<{ Params: { slug: string }; Body: { pin: string; lat: number | null; lng: number | null; radius_meters: number } }>(
     '/api/businesses/:slug/location', async (req, reply) => {
       const { pin, lat, lng, radius_meters } = req.body
-      const biz = db.prepare('SELECT manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = db.prepare('SELECT manager_pin, plan FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       if (!verifyPinHash(pin, biz.manager_pin)) return reply.code(401).send({ error: 'PIN이 올바르지 않습니다' })
+      // GPS 위치 제한은 유료 전용 — 무료 플랜은 위치 설정 불가(해제는 허용)
+      if (lat != null && lng != null && !planAllows(biz.plan, 'gps')) {
+        return reply.code(403).send({
+          error: 'GPS 위치 제한은 유료 플랜 기능이에요. 플랜을 업그레이드해주세요.',
+          code: 'PLAN_FEATURE', feature: 'gps', plan: biz.plan ?? 'free',
+        })
+      }
       db.prepare('UPDATE businesses SET lat=?, lng=?, radius_meters=? WHERE slug=?')
         .run(lat ?? null, lng ?? null, radius_meters ?? 300, req.params.slug)
       return { ok: true }

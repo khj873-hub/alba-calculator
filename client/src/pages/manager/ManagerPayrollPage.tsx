@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchPayroll, fetchEmployees, updateEmployee, fetchBusiness } from '../../api'
+import { fetchPayroll, fetchEmployees, updateEmployee, fetchBusiness, planHasPayslip } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getWeekKey } from '../../utils/pay'
 import type { PayrollEntry, Employee, Business } from '../../types'
@@ -381,6 +381,7 @@ export default function PayrollPage() {
   const totalPay = adjustedData.reduce((s, { adj }) => s + adj.totalPay, 0)
   const totalHolidayPay = adjustedData.reduce((s, { adj }) => s + adj.holidayPay, 0)
   const totalMins = adjustedData.reduce((s, { adj }) => s + adj.totalMins, 0)
+  const payslipAllowed = planHasPayslip(business?.plan) // 명세서 출력은 유료 전용
 
   return (
     <div>
@@ -585,7 +586,7 @@ export default function PayrollPage() {
                   </div>
                 </details>
 
-                {payOn && (
+                {payOn && payslipAllowed && (
                   <div className="mt-3 flex flex-col gap-2">
                     <button
                       onClick={() => openPayslip(entry, adj, year, month, holidayOn, breakTimeEnabled, businessName)}
@@ -599,6 +600,13 @@ export default function PayrollPage() {
                     >
                       📊 엑셀(CSV) 다운로드
                     </button>
+                  </div>
+                )}
+                {payOn && !payslipAllowed && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-center">
+                    <p className="text-xs text-gray-600 mb-1">🔒 급여명세서 PDF·CSV 출력은 <b>유료 플랜</b> 기능이에요</p>
+                    <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
+                      className="text-xs font-bold text-amber-700 underline">플랜 업그레이드 문의</a>
                   </div>
                 )}
               </div>

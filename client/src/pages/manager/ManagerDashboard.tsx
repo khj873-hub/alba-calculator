@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, resignEmployee, restoreEmployee,
-  setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, upgradePlanSummary, PlanLimitError,
+  setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, planHasGps, upgradePlanSummary, PlanLimitError,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
@@ -256,6 +256,7 @@ export default function ManagerDashboard() {
   const limit = planActiveLimit(business?.plan)            // null = 무제한
   const atLimit = limit !== null && activeEmployees.length >= limit
   const notifAllowed = planHasNotifications(business?.plan) // 출퇴근 알림은 유료 전용
+  const gpsAllowed = planHasGps(business?.plan)             // GPS 위치 제한은 유료 전용
 
   return (
     <div>
@@ -692,13 +693,32 @@ export default function ManagerDashboard() {
           className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
         >
           <span>📍 출퇴근 위치 제한</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${hasLocation ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-            {hasLocation ? `ON · 반경 ${business?.radius_meters}m` : 'OFF'}
-          </span>
+          {gpsAllowed ? (
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ml-1 ${hasLocation ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+              {hasLocation ? `ON · 반경 ${business?.radius_meters}m` : 'OFF'}
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 rounded-full font-bold ml-1 bg-amber-100 text-amber-700">🔒 유료</span>
+          )}
           <span className="ml-auto">{showLocationForm ? '▲' : '▼'}</span>
         </button>
 
-        {showLocationForm && (
+        {showLocationForm && !gpsAllowed && (
+          <div className="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
+            <div className="text-2xl mb-2">🔒</div>
+            <p className="text-sm font-bold text-gray-800 mb-1">유료 플랜 기능이에요</p>
+            <p className="text-xs text-gray-500 leading-relaxed mb-2">
+              매장 반경 안에서만 출퇴근을 찍게 하는 GPS 제한 기능이에요. 유료 플랜에서 켤 수 있어요.
+            </p>
+            <p className="text-xs text-gray-500 bg-white/70 rounded-lg px-3 py-2 mb-4">{upgradePlanSummary()}</p>
+            <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
+              className="inline-block px-5 py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm hover:bg-amber-600 transition">
+              플랜 업그레이드 문의
+            </a>
+          </div>
+        )}
+
+        {showLocationForm && gpsAllowed && (
           <div className="mt-4 bg-gray-50 rounded-2xl p-4 flex flex-col gap-3">
             {hasLocation && (
               <div className="bg-green-50 rounded-xl px-3 py-2 text-xs text-green-700 font-semibold">

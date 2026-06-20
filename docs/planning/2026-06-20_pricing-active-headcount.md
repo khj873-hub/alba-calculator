@@ -47,7 +47,9 @@
 - **P3 (진행 중)**: 기능 게이트(플랜 연동) + 업그레이드 유도 UI
   - ✅ **출퇴근 알림(SMS·카카오톡) 유료 전용** — plans.ts features.notifications. 2중 잠금: 무료는 켜기 403(PLAN_FEATURE, manager+admin) + 발송 시점 게이트(무료면 미발송, 비용 방지). 무료 UI는 🔒 잠금 카드 + 업그레이드 CTA.
     - ⚠️ grandfathering: 무료인데 sms_enabled=1이던 기존 사업장은 배포 후 **발송 중단**(send 게이트). 플래그는 남아도 무해(게이트가 막음).
-  - (예정) GPS·PDF·다매장 게이트
+  - ✅ **GPS 위치 제한 유료 전용** — plans.ts features.gps. businesses location PATCH에서 무료가 lat/lng 설정 시 403 PLAN_FEATURE(해제=null은 허용). ManagerDashboard 위치 섹션 🔒 잠금.
+  - ✅ **급여명세서 PDF·CSV 출력 유료 전용** — plans.ts features.payslipExport. ManagerPayrollPage 출력 버튼을 무료면 🔒 안내로 대체(클라 출력이라 UI 게이트). 급여 계산·조회 자체는 무료 유지.
+  - ⚠️ **다매장 게이트 보류** — plan이 사업장 단위라 "한 사장님(user) 여러 매장"과 안 맞음(user 단위 플랜 모델 필요). 게다가 다매장 관리 기능 자체가 미구현. 별도 설계 필요.
 - **P4 (예정)**: 운영자 콘솔 플랜·한도 관리 확장 (기존 plan free/paid 토글 확장)
   - 다단계 플랜(베이직/프로)은 현재 free/paid 2단계 → 확장 시 plans.ts + businesses.plan 값 추가
 

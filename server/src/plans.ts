@@ -2,7 +2,9 @@
 // 인원수·가격은 시장조사 후 확정 예정. 기획: docs/planning/2026-06-20_pricing-active-headcount.md
 // ⚠️ free 한도는 잠정값(placeholder) — 비즈니스 확정 시 이 한 곳만 바꾸면 됨.
 export interface PlanFeatures {
-  notifications: boolean // 출퇴근 SMS/카카오 알림톡 — 발송 비용 발생, 유료 전용
+  notifications: boolean   // 출퇴근 SMS/카카오 알림톡 — 발송 비용 발생, 유료 전용
+  gps: boolean             // GPS 위치 기반 출근 제한
+  payslipExport: boolean   // 급여명세서 PDF/CSV 출력
 }
 
 export interface PlanDef {
@@ -16,11 +18,11 @@ export interface PlanDef {
 // 요금제 4단계. plan 컬럼은 TEXT(앱 레이어 검증)라 키 확장 자유.
 // 'paid'는 과거 2단계 시절 레거시 — 무제한으로 호환 유지(신규 부여 금지).
 export const PLANS: Record<string, PlanDef> = {
-  free:       { key: 'free',       label: '무료',         maxActiveEmployees: 3,    monthlyPrice: 0,     features: { notifications: false } },
-  basic:      { key: 'basic',      label: '베이직',       maxActiveEmployees: 5,    monthlyPrice: 9900,  features: { notifications: true } },
-  pro:        { key: 'pro',        label: '프로',         maxActiveEmployees: 20,   monthlyPrice: 29900, features: { notifications: true } },
-  enterprise: { key: 'enterprise', label: '엔터프라이즈', maxActiveEmployees: null, monthlyPrice: null,  features: { notifications: true } },
-  paid:       { key: 'paid',       label: '유료(레거시)', maxActiveEmployees: null, monthlyPrice: null,  features: { notifications: true } },
+  free:       { key: 'free',       label: '무료',         maxActiveEmployees: 3,    monthlyPrice: 0,     features: { notifications: false, gps: false, payslipExport: false } },
+  basic:      { key: 'basic',      label: '베이직',       maxActiveEmployees: 5,    monthlyPrice: 9900,  features: { notifications: true,  gps: true,  payslipExport: true } },
+  pro:        { key: 'pro',        label: '프로',         maxActiveEmployees: 20,   monthlyPrice: 29900, features: { notifications: true,  gps: true,  payslipExport: true } },
+  enterprise: { key: 'enterprise', label: '엔터프라이즈', maxActiveEmployees: null, monthlyPrice: null,  features: { notifications: true,  gps: true,  payslipExport: true } },
+  paid:       { key: 'paid',       label: '유료(레거시)', maxActiveEmployees: null, monthlyPrice: null,  features: { notifications: true,  gps: true,  payslipExport: true } },
 }
 
 // 운영자가 부여 가능한 플랜(레거시 paid 제외)
