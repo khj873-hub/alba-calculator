@@ -128,6 +128,20 @@ export default function CreateBusinessPage() {
           </button>
         </form>
       )}
+
+      {/* 유료 플랜 문의 */}
+      <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+        <p className="text-sm text-gray-500 mb-1">유료 플랜(직원 5명↑ · 알림 · GPS · 명세서 출력)이 필요하세요?</p>
+        <a
+          href="https://pf.kakao.com/_xdwVxjX"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-bold text-green-600 underline underline-offset-2 hover:text-green-700"
+        >
+          유료 플랜 문의하기 →
+        </a>
+        <p className="text-xs text-gray-400 mt-2">무료로 먼저 시작한 뒤 언제든 업그레이드할 수 있어요.</p>
+      </div>
     </div>
   )
 }
