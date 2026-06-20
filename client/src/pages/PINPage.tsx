@@ -7,6 +7,7 @@ export default function PINPage() {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [oauthEnabled, setOauthEnabled] = useState(false)
+  const [showPinHelp, setShowPinHelp] = useState(false)
   const [searchParams] = useSearchParams()
   const { login } = useManager()
   const navigate = useNavigate()
@@ -109,6 +110,30 @@ export default function PINPage() {
           확인
         </button>
       </form>
+
+      {/* PIN 분실 안내 */}
+      <div className="mt-5 w-full max-w-xs text-center">
+        <button
+          onClick={() => setShowPinHelp(v => !v)}
+          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+        >
+          PIN을 잊으셨나요?
+        </button>
+        {showPinHelp && (
+          <div className="mt-3 text-xs text-gray-500 bg-gray-100 rounded-xl p-3.5 leading-relaxed text-left">
+            {oauthEnabled && (
+              <p className="mb-1.5">• <b>구글 계정을 연결</b>한 사업장이면 위 <b>"구글로 로그인"</b>으로 바로 들어갈 수 있어요.</p>
+            )}
+            <p>• PIN으로만 쓰던 사업장이면 <b>운영자에게 PIN 재발급</b>을 요청하세요.</p>
+            <button
+              onClick={() => navigate('/?inquiry=' + encodeURIComponent('기타 문의'))}
+              className="mt-2.5 text-green-600 font-bold underline underline-offset-2"
+            >
+              PIN 재발급 문의하기 →
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
