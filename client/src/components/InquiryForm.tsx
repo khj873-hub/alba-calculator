@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { submitInquiry } from '../api'
 
@@ -20,10 +20,15 @@ const INQUIRY_TYPES = [
   '기타 문의',
 ]
 
-export default function InquiryForm() {
+export default function InquiryForm({ initialType }: { initialType?: string }) {
   const navigate = useNavigate()
   const [source, setSource] = useState('')
   const [inquiryType, setInquiryType] = useState('')
+
+  // 요금제 카드에서 '문의하기'로 들어오면 해당 플랜을 자동 선택
+  useEffect(() => {
+    if (initialType) setInquiryType(initialType)
+  }, [initialType])
   const [businessName, setBusinessName] = useState('')
   const [phone, setPhone] = useState('')
   const [content, setContent] = useState('')
