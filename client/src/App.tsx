@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { ManagerProvider } from './context/ManagerContext'
 import EmployeeLayout from './components/EmployeeLayout'
 import ManagerLayout from './components/ManagerLayout'
@@ -15,10 +16,18 @@ import EmployeeFormPage from './pages/manager/EmployeeFormPage'
 import AdminPage from './pages/AdminPage'
 import LegalPage from './pages/LegalPage'
 
+// 경로 이동 시 스크롤을 맨 위로 (SPA는 기본적으로 위치 유지)
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
+
 export default function App() {
   return (
     <ManagerProvider>
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           {/* 랜딩 */}
           <Route path="/" element={<LandingPage />} />
