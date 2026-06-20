@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { fetchBusiness, ServiceSuspendedError } from '../api'
 import InquiryForm from '../components/InquiryForm'
 import KakaoFloatButton from '../components/KakaoFloatButton'
+import AdSlot from '../components/AdSlot'
 
 const KAKAO_URL = 'https://pf.kakao.com/_xdwVxjX'
 
@@ -100,13 +101,13 @@ export default function LandingPage() {
           출퇴근 기록부터 급여 계산, 위치 기반 출근 체크까지<br />
           <strong className="text-gray-700">단기·장기 직원</strong> 모두를 위한 근태 관리 서비스
         </p>
-        <a
-          href="#inquiry"
+        <button
+          onClick={() => navigate('/create')}
           className="inline-block bg-green-500 text-white font-extrabold px-8 py-4 rounded-2xl text-base hover:bg-green-600 transition shadow-lg shadow-green-200"
         >
-          무료로 사업장 등록하기 →
-        </a>
-        <p className="text-xs text-gray-400 mt-3">신용카드 불필요 · 1분 만에 시작</p>
+          무료로 사업장 만들기 →
+        </button>
+        <p className="text-xs text-gray-400 mt-3">구글 로그인 · 신용카드 불필요 · 1분 만에 시작</p>
       </section>
 
       {/* 미리보기 */}
@@ -157,13 +158,21 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* 광고 (랜딩 전용 · 게시자ID + 슬롯 모두 설정됐을 때만 노출) */}
+      {(import.meta as any).env?.VITE_ADSENSE_CLIENT && (import.meta as any).env?.VITE_ADSENSE_SLOT_LANDING && (
+        <section className="px-6 max-w-2xl mx-auto mb-16">
+          <p className="text-center text-[10px] text-gray-300 uppercase tracking-widest mb-2">광고</p>
+          <AdSlot slot={(import.meta as any).env?.VITE_ADSENSE_SLOT_LANDING} />
+        </section>
+      )}
+
       {/* 사용 방법 */}
       <section className="bg-gray-50 px-6 py-12 mb-16">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-xl font-extrabold text-gray-800 text-center mb-8">3단계로 시작하세요</h2>
           <div className="flex flex-col gap-4">
             {[
-              { step: '1', title: '사업장 등록 신청', desc: '아래 버튼으로 신청하면 빠르게 사업장 코드를 발급해드립니다.' },
+              { step: '1', title: '구글로 사업장 만들기', desc: '구글 로그인 후 사업장명·관리자 PIN만 입력하면 바로 시작. 신용카드 불필요.' },
               { step: '2', title: '직원 추가', desc: '직원 이름과 시급을 입력하면 바로 사용 가능합니다.' },
               { step: '3', title: '코드 공유', desc: '발급된 사업장 코드를 직원에게 알려주세요. 출퇴근 시작!' },
             ].map(s => (
@@ -178,6 +187,52 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* 요금제 안내 */}
+      <section className="px-6 max-w-2xl mx-auto mb-16" id="pricing">
+        <p className="text-center text-xs font-bold text-green-600 uppercase tracking-widest mb-3">PRICING</p>
+        <h2 className="text-xl font-extrabold text-gray-800 text-center mb-2">합리적인 요금제</h2>
+        <p className="text-center text-sm text-gray-500 mb-8">무료로 시작하고, 필요할 때 업그레이드하세요</p>
+        <div className="flex flex-col gap-4">
+          {[
+            { name: '무료', price: '0원', cap: '활성 직원 3명', highlight: false,
+              feats: ['출퇴근 기록', '급여·주휴수당 자동 계산'], note: '구글 로그인으로 바로 시작' },
+            { name: '베이직', price: '월 9,900원', cap: '활성 직원 5명', highlight: true,
+              feats: ['무료 기능 전체', '출퇴근 SMS·카카오 알림', 'GPS 위치 제한', '급여명세서 PDF·CSV 출력'], note: '가장 인기' },
+            { name: '프로', price: '월 29,900원', cap: '활성 직원 20명', highlight: false,
+              feats: ['베이직 기능 전체', '직원 20명까지'], note: '규모 있는 매장' },
+            { name: '엔터프라이즈', price: '별도 문의', cap: '직원 무제한', highlight: false,
+              feats: ['프로 기능 전체', '직원 수 제한 없음'], note: '다점포·대형 사업장' },
+          ].map(p => (
+            <div key={p.name} className={`rounded-2xl border p-5 ${p.highlight ? 'border-green-300 bg-green-50/50 shadow-sm' : 'border-gray-100 bg-white'}`}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-gray-800">{p.name}</span>
+                  {p.highlight && <span className="text-[10px] font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">{p.note}</span>}
+                </div>
+                <span className="font-extrabold text-gray-900">{p.price}</span>
+              </div>
+              <div className="text-xs text-gray-500 mb-3">{p.cap}{!p.highlight && p.note ? ` · ${p.note}` : ''}</div>
+              <ul className="flex flex-col gap-1.5">
+                {p.feats.map(f => (
+                  <li key={f} className="text-sm text-gray-600 flex items-center gap-2">
+                    <span className="text-green-500 font-bold">✓</span>{f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="mt-6 text-center">
+          <button onClick={() => navigate('/create')}
+            className="inline-block bg-green-500 text-white font-extrabold px-8 py-3.5 rounded-2xl text-sm hover:bg-green-600 transition shadow-lg shadow-green-200">
+            무료로 시작하기 →
+          </button>
+          <p className="text-xs text-gray-400 mt-3">
+            유료 플랜은 <a href="#inquiry" className="text-green-600 font-bold underline underline-offset-2">도입 문의</a>로 신청하시면 운영자가 설정해드려요.
+          </p>
         </div>
       </section>
 
