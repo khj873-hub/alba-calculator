@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { fetchPayroll, fetchEmployees, updateEmployee, fetchBusiness, planHasPayslip } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import { getWeekKey } from '../../utils/pay'
@@ -291,6 +292,7 @@ function Toggle({ enabled, onToggle, label }: { enabled: boolean; onToggle: () =
 export default function PayrollPage() {
   const now = new Date()
   const slug = useSlug()
+  const navigate = useNavigate()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [data, setData] = useState<PayrollEntry[]>([])
@@ -605,8 +607,8 @@ export default function PayrollPage() {
                 {payOn && !payslipAllowed && (
                   <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-center">
                     <p className="text-xs text-gray-600 mb-1">🔒 급여명세서 PDF·CSV 출력은 <b>유료 플랜</b> 기능이에요</p>
-                    <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
-                      className="text-xs font-bold text-amber-700 underline">플랜 업그레이드 문의</a>
+                    <button onClick={() => navigate('/?inquiry=' + encodeURIComponent('베이직 (직원 5명·월 9,900원)'))}
+                      className="text-xs font-bold text-amber-700 underline">플랜 업그레이드 문의</button>
                   </div>
                 )}
               </div>

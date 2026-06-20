@@ -74,10 +74,10 @@ export default function EmployeeFormPage() {
             </ul>
             <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mb-5">{upgradePlanSummary()}</p>
             <div className="flex flex-col gap-2">
-              <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
+              <button onClick={() => navigate('/?inquiry=' + encodeURIComponent('베이직 (직원 5명·월 9,900원)'))}
                 className="w-full text-center py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition">
                 플랜 업그레이드 문의
-              </a>
+              </button>
               <button onClick={() => { setPlanLimit(null); navigate(`/${slug}/manager`) }}
                 className="w-full py-3 rounded-xl bg-gray-100 text-gray-600 font-semibold text-sm hover:bg-gray-200 transition">
                 직원 목록에서 퇴사 처리하기

@@ -668,10 +668,10 @@ export default function ManagerDashboard() {
               유료 플랜으로 업그레이드하면 켤 수 있어요.
             </p>
             <p className="text-xs text-gray-500 bg-white/70 rounded-lg px-3 py-2 mb-4">{upgradePlanSummary()}</p>
-            <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
+            <button onClick={() => navigate('/?inquiry=' + encodeURIComponent('베이직 (직원 5명·월 9,900원)'))}
               className="inline-block px-5 py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm hover:bg-amber-600 transition">
               플랜 업그레이드 문의
-            </a>
+            </button>
           </div>
         )}
 
@@ -737,10 +737,10 @@ export default function ManagerDashboard() {
               매장 반경 안에서만 출퇴근을 찍게 하는 GPS 제한 기능이에요. 유료 플랜에서 켤 수 있어요.
             </p>
             <p className="text-xs text-gray-500 bg-white/70 rounded-lg px-3 py-2 mb-4">{upgradePlanSummary()}</p>
-            <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
+            <button onClick={() => navigate('/?inquiry=' + encodeURIComponent('베이직 (직원 5명·월 9,900원)'))}
               className="inline-block px-5 py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm hover:bg-amber-600 transition">
               플랜 업그레이드 문의
-            </a>
+            </button>
           </div>
         )}
 
