@@ -82,6 +82,23 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
   )
 
+  // 관리자 PIN 재발급 — PIN 분실 복구용. 현재 PIN 몰라도 운영자 권한으로 재설정.
+  // new_pin 미입력 시 6자리 자동 생성. 응답에 평문 PIN 반환(운영자가 사장님께 전달).
+  app.patch<{ Params: { slug: string }; Body: { new_pin?: string } }>(
+    '/api/admin/businesses/:slug/reset-pin', { preHandler: requireAdminAuth }, async (req, reply) => {
+      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      if (!biz) return reply.code(404).send({ error: '사업장 없음' })
+      let pin = (req.body?.new_pin || '').trim()
+      if (pin) {
+        if (!/^[0-9]{4,8}$/.test(pin)) return reply.code(400).send({ error: 'PIN은 4~8자리 숫자여야 합니다' })
+      } else {
+        pin = String(Math.floor(100000 + Math.random() * 900000)) // 6자리 자동 생성
+      }
+      db.prepare('UPDATE businesses SET manager_pin = ? WHERE slug = ?').run(hashPin(pin), req.params.slug)
+      return { ok: true, new_pin: pin }
+    }
+  )
+
   // 출근 SMS 알림 설정 (운영자가 사업장 대신 수신번호 일괄 등록)
   // 사장님 셀프(/api/businesses/:slug/sms-notify, requireManagerAuth)와 동일 검증.
   app.patch<{ Params: { slug: string }; Body: { notify_phone?: string | null; sms_notify_enabled?: boolean } }>(

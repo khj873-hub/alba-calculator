@@ -282,6 +282,20 @@ export default function AdminPage() {
     } catch (e: any) { alert(`기한 변경 실패: ${e.message}`) }
   }
 
+  const handleResetPin = async (b: AdminBiz) => {
+    const input = prompt(`${b.name}의 관리자 PIN을 재발급합니다.\n새 PIN을 입력하세요 (비우면 자동 생성, 4~8자리 숫자):`)
+    if (input === null) return // 취소
+    const newPin = input.trim()
+    if (newPin && !/^[0-9]{4,8}$/.test(newPin)) { alert('PIN은 4~8자리 숫자여야 합니다'); return }
+    try {
+      const res: any = await adminApi(`/admin/businesses/${b.slug}/reset-pin`, {
+        method: 'PATCH',
+        body: JSON.stringify({ new_pin: newPin || undefined }),
+      })
+      alert(`✅ PIN 재발급 완료\n\n사업장: ${b.name}\n새 PIN: ${res.new_pin}\n\n이 PIN을 사장님께 안전하게 전달하세요. (기존 PIN은 더 이상 사용 불가)`)
+    } catch (e: any) { alert(`PIN 재발급 실패: ${e.message}`) }
+  }
+
   const handleToggleActive = async (b: AdminBiz) => {
     const next = b.is_active === 1 ? 0 : 1
     const action = next === 0 ? '정지' : '활성화'
@@ -572,7 +586,12 @@ export default function AdminPage() {
                         )
                       })()}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs">{b.slug}</td>
+                    <td className="px-4 py-3 font-mono text-xs">
+                      <div>{b.slug}</div>
+                      <button onClick={() => handleResetPin(b)}
+                        title="관리자 PIN 재발급 (분실 복구)"
+                        className="mt-1 text-[11px] font-sans font-semibold text-gray-400 hover:text-blue-600 transition">🔑 PIN 재발급</button>
+                    </td>
                     <td className="px-4 py-3 font-semibold">{b.name}</td>
                     <td className="px-4 py-3 text-gray-500">{b.employee_count}</td>
                     <td className="px-4 py-3">
