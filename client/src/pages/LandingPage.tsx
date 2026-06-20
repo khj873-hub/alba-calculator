@@ -124,10 +124,10 @@ export default function LandingPage() {
           <div className="grid grid-cols-3 gap-3 sm:gap-4">
             {[
               { icon: '🟢', label: '출근 처리', desc: '원터치' },
-              { icon: '📊', label: '급여 계산', desc: '자동화' },
+              { icon: '📊', label: '급여·명세서', desc: '자동 계산·PDF' },
               { icon: '📍', label: '위치 제한', desc: 'GPS 기반' },
-              { icon: '🏖', label: '휴가 관리', desc: '4종 분류' },
-              { icon: '📄', label: '명세서', desc: 'PDF/CSV' },
+              { icon: '🏖', label: '휴가·주휴수당', desc: '4종+자동 계산' },
+              { icon: '📲', label: '출퇴근 알림', desc: '카카오·문자' },
               { icon: '🔐', label: '구글 로그인', desc: '안전 접근' },
             ].map(item => (
               <div key={item.label} className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm">
@@ -147,6 +147,7 @@ export default function LandingPage() {
           {[
             { icon: '👥', title: '단기·장기 직원 구분 관리', desc: '직원 유형별로 시급/주휴수당 자동 적용. 한 사업장에서 모두 관리.' },
             { icon: '📱', title: '원터치 출퇴근', desc: '직원이 스마트폰으로 간편하게 출퇴근 체크. 관리자는 실시간으로 확인.' },
+            { icon: '📲', title: '출퇴근 알림 (SMS·카카오)', desc: '직원이 출퇴근을 찍으면 사장님 휴대폰으로 즉시 알림. 매장에 없어도 실시간 확인.' },
             { icon: '📍', title: '위치 기반 출근 제한', desc: '사업장 반경 안에서만 출근 가능. GPS로 정확하게 확인.' },
             { icon: '💰', title: '자동 급여 계산', desc: '시급 × 근무시간 자동 계산. 주휴수당도 옵션으로 적용.' },
             { icon: '🏖', title: '휴가 관리 (4종)', desc: '연차·반차·병가·경조사 등록. 급여에 자동 반영하거나 기록만 남길지 선택.' },
