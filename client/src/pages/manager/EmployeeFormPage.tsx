@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { fetchEmployees, createEmployee, updateEmployee, PlanLimitError } from '../../api'
+import { fetchEmployees, createEmployee, updateEmployee, PlanLimitError, upgradePlanSummary } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 
 const COLORS = [
@@ -68,10 +68,11 @@ export default function EmployeeFormPage() {
               현재 플랜은 활성 직원 <b>{planLimit.limit}명</b>까지예요 (현재 {planLimit.active}명).
               더 등록하려면 아래 중 하나를 선택하세요.
             </p>
-            <ul className="text-sm text-gray-600 list-disc pl-5 mb-5 space-y-1">
+            <ul className="text-sm text-gray-600 list-disc pl-5 mb-3 space-y-1">
               <li>그만둔 직원을 <b>퇴사 처리</b>하면 자리가 비어 바로 등록할 수 있어요.</li>
               <li>직원이 더 필요하면 <b>플랜 업그레이드</b>를 문의하세요.</li>
             </ul>
+            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mb-5">{upgradePlanSummary()}</p>
             <div className="flex flex-col gap-2">
               <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
                 className="w-full text-center py-3 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition">

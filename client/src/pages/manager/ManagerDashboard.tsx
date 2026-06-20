@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, resignEmployee, restoreEmployee,
-  setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, PlanLimitError,
+  setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, upgradePlanSummary, PlanLimitError,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
@@ -636,10 +636,11 @@ export default function ManagerDashboard() {
           <div className="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
             <div className="text-2xl mb-2">🔒</div>
             <p className="text-sm font-bold text-gray-800 mb-1">유료 플랜 기능이에요</p>
-            <p className="text-xs text-gray-500 leading-relaxed mb-4">
+            <p className="text-xs text-gray-500 leading-relaxed mb-2">
               직원이 출퇴근을 찍으면 사장님 휴대폰으로 알림(SMS·카카오톡)이 갑니다.
               유료 플랜으로 업그레이드하면 켤 수 있어요.
             </p>
+            <p className="text-xs text-gray-500 bg-white/70 rounded-lg px-3 py-2 mb-4">{upgradePlanSummary()}</p>
             <a href="https://pf.kakao.com/_xdwVxjX" target="_blank" rel="noopener noreferrer"
               className="inline-block px-5 py-2.5 rounded-xl bg-amber-500 text-white font-bold text-sm hover:bg-amber-600 transition">
               플랜 업그레이드 문의

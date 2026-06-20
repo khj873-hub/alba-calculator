@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db, hashPin } from '../db'
 import { requireAdminAuth } from '../middleware/auth'
-import { planAllows } from '../plans'
+import { planAllows, ASSIGNABLE_PLANS } from '../plans'
 
 function generateSlug(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -30,12 +30,12 @@ export default async function adminRoutes(app: FastifyInstance) {
   })
 
   // 요금제(plan) 변경
-  app.patch<{ Params: { slug: string }; Body: { plan: 'free' | 'paid' } }>(
+  app.patch<{ Params: { slug: string }; Body: { plan: string } }>(
     '/api/admin/businesses/:slug/plan', { preHandler: requireAdminAuth }, async (req, reply) => {
       const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
       const plan = req.body.plan
-      if (plan !== 'free' && plan !== 'paid') return reply.code(400).send({ error: '잘못된 요금제' })
+      if (!ASSIGNABLE_PLANS.includes(plan)) return reply.code(400).send({ error: '잘못된 요금제' })
       db.prepare('UPDATE businesses SET plan = ? WHERE slug = ?').run(plan, req.params.slug)
       return { ok: true, plan }
     }

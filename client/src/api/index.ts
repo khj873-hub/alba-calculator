@@ -31,14 +31,35 @@ export class PlanLimitError extends Error {
   }
 }
 
-// 클라이언트용 플랜 한도 (표시용 — 서버 plans.ts 와 동일하게 유지)
-export const PLAN_ACTIVE_LIMIT: Record<string, number | null> = { free: 3, paid: null }
-export function planActiveLimit(plan?: string): number | null {
-  return plan && plan in PLAN_ACTIVE_LIMIT ? PLAN_ACTIVE_LIMIT[plan] : PLAN_ACTIVE_LIMIT.free
+// 클라이언트 플랜 표시 정보 (서버 plans.ts 와 동일하게 유지)
+export interface PlanDisplay { label: string; maxActive: number | null; monthlyPrice: number | null; notifications: boolean }
+export const PLANS_DISPLAY: Record<string, PlanDisplay> = {
+  free:       { label: '무료',         maxActive: 3,    monthlyPrice: 0,     notifications: false },
+  basic:      { label: '베이직',       maxActive: 5,    monthlyPrice: 9900,  notifications: true },
+  pro:        { label: '프로',         maxActive: 20,   monthlyPrice: 29900, notifications: true },
+  enterprise: { label: '엔터프라이즈', maxActive: null, monthlyPrice: null,  notifications: true },
+  paid:       { label: '유료',         maxActive: null, monthlyPrice: null,  notifications: true },
 }
-// 출퇴근 알림(SMS/카카오)은 유료 전용 (서버 plans.ts features.notifications 와 동일)
+// 유료 단계 목록 (업그레이드 안내용 — 무료/레거시 제외)
+export const UPGRADE_PLANS = ['basic', 'pro', 'enterprise']
+function planInfo(plan?: string): PlanDisplay {
+  return (plan && PLANS_DISPLAY[plan]) || PLANS_DISPLAY.free
+}
+export function planActiveLimit(plan?: string): number | null {
+  return planInfo(plan).maxActive
+}
+// 출퇴근 알림(SMS/카카오)은 유료 전용
 export function planHasNotifications(plan?: string): boolean {
-  return plan === 'paid'
+  return planInfo(plan).notifications
+}
+// 업그레이드 플랜 요약 (모달/안내용): "베이직 10명 9,900원 · 프로 30명 29,900원 · 엔터프라이즈 무제한 별도문의"
+export function upgradePlanSummary(): string {
+  return UPGRADE_PLANS.map(k => {
+    const p = PLANS_DISPLAY[k]
+    const cap = p.maxActive === null ? '무제한' : `${p.maxActive}명`
+    const price = p.monthlyPrice === null ? '별도문의' : `${p.monthlyPrice.toLocaleString()}원`
+    return `${p.label} ${cap} ${price}`
+  }).join(' · ')
 }
 
 async function req<T>(url: string, options?: RequestInit, sessionToken?: string): Promise<T> {

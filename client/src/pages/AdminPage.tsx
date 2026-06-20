@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 const ADMIN_TOKEN_KEY = 'admin_token'
 
-type Plan = 'free' | 'paid'
+type Plan = 'free' | 'basic' | 'pro' | 'enterprise' | 'paid'
 type InquiryStatus = 'new' | 'in_progress' | 'done' | 'spam'
 type AdminTab = 'businesses' | 'inquiries'
 
@@ -519,14 +519,17 @@ export default function AdminPage() {
                         value={b.plan}
                         onChange={e => handleChangePlan(b, e.target.value as Plan)}
                         className={`text-xs font-bold px-2 py-1 rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300 ${
-                          b.plan === 'paid'
+                          b.plan !== 'free'
                             ? 'bg-amber-50 text-amber-700 border-amber-200'
                             : 'bg-gray-50 text-gray-600 border-gray-200'
                         }`}
                         title="요금제 변경"
                       >
-                        <option value="free">🆓 무료</option>
-                        <option value="paid">💎 유료</option>
+                        <option value="free">🆓 무료 (3명)</option>
+                        <option value="basic">💳 베이직 (5명·9,900원)</option>
+                        <option value="pro">💎 프로 (20명·29,900원)</option>
+                        <option value="enterprise">🏢 엔터프라이즈 (무제한)</option>
+                        {b.plan === 'paid' && <option value="paid">💎 유료(레거시)</option>}
                       </select>
                     </td>
                     <td className="px-4 py-3">
@@ -537,8 +540,9 @@ export default function AdminPage() {
                           d < 0 ? '🔴 만료' :
                           d <= 7 ? `🟡 D-${d}` :
                           `🟢 D-${d}`
+                        const isPaid = b.plan !== 'free'
                         const inputCls =
-                          b.plan !== 'paid' ? 'border-gray-200 bg-gray-50 text-gray-400' :
+                          !isPaid ? 'border-gray-200 bg-gray-50 text-gray-400' :
                           d === null ? 'border-gray-200 text-gray-600' :
                           d < 0 ? 'border-red-300 bg-red-50 text-red-700' :
                           d <= 7 ? 'border-yellow-300 bg-yellow-50 text-yellow-800' :
@@ -550,9 +554,9 @@ export default function AdminPage() {
                               value={b.plan_expires_at || ''}
                               onChange={e => handleChangeExpiresAt(b, e.target.value)}
                               className={`text-xs px-2 py-1 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-300 ${inputCls}`}
-                              title={b.plan === 'paid' ? '유료 결제 만료일 (도달 시 자동 정지)' : '무료 사용자엔 적용 안 됨 (참고용)'}
+                              title={isPaid ? '유료 결제 만료일 (도달 시 자동 정지)' : '무료 사용자엔 적용 안 됨 (참고용)'}
                             />
-                            {b.plan === 'paid' && status && (
+                            {isPaid && status && (
                               <span className="text-[10px] font-bold text-gray-500 px-1">{status}</span>
                             )}
                           </div>

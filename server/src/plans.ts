@@ -8,14 +8,23 @@ export interface PlanFeatures {
 export interface PlanDef {
   key: string
   label: string
-  maxActiveEmployees: number | null
+  maxActiveEmployees: number | null // null = 무제한
+  monthlyPrice: number | null       // 원/월. null = 별도 문의
   features: PlanFeatures
 }
 
+// 요금제 4단계. plan 컬럼은 TEXT(앱 레이어 검증)라 키 확장 자유.
+// 'paid'는 과거 2단계 시절 레거시 — 무제한으로 호환 유지(신규 부여 금지).
 export const PLANS: Record<string, PlanDef> = {
-  free: { key: 'free', label: '무료', maxActiveEmployees: 3, features: { notifications: false } },
-  paid: { key: 'paid', label: '유료', maxActiveEmployees: null, features: { notifications: true } },
+  free:       { key: 'free',       label: '무료',         maxActiveEmployees: 3,    monthlyPrice: 0,     features: { notifications: false } },
+  basic:      { key: 'basic',      label: '베이직',       maxActiveEmployees: 5,    monthlyPrice: 9900,  features: { notifications: true } },
+  pro:        { key: 'pro',        label: '프로',         maxActiveEmployees: 20,   monthlyPrice: 29900, features: { notifications: true } },
+  enterprise: { key: 'enterprise', label: '엔터프라이즈', maxActiveEmployees: null, monthlyPrice: null,  features: { notifications: true } },
+  paid:       { key: 'paid',       label: '유료(레거시)', maxActiveEmployees: null, monthlyPrice: null,  features: { notifications: true } },
 }
+
+// 운영자가 부여 가능한 플랜(레거시 paid 제외)
+export const ASSIGNABLE_PLANS = ['free', 'basic', 'pro', 'enterprise']
 
 // 플랜이 특정 기능을 허용하는지
 export function planAllows(plan: string | null | undefined, feature: keyof PlanFeatures): boolean {
