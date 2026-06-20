@@ -238,6 +238,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS inquiries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
+    inquiry_type TEXT,
     business_name TEXT NOT NULL,
     phone TEXT NOT NULL,
     content TEXT,
@@ -250,6 +251,15 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_inquiry_status ON inquiries(status);
   CREATE INDEX IF NOT EXISTS idx_inquiry_created ON inquiries(created_at DESC);
+  `)
+
+  // 문의 유형(관심 플랜·단순 도입 등) — 기존 inquiries 테이블에 멱등 추가
+  const inqCols = db.prepare('PRAGMA table_info(inquiries)').all() as any[]
+  if (inqCols.length > 0 && !inqCols.find((c: any) => c.name === 'inquiry_type')) {
+    db.exec('ALTER TABLE inquiries ADD COLUMN inquiry_type TEXT')
+  }
+
+  db.exec(`
 
   CREATE TABLE IF NOT EXISTS notification_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

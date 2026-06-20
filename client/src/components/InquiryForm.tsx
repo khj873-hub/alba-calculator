@@ -11,9 +11,19 @@ const SOURCES = [
   '기타',
 ]
 
+// 문의 유형 — 운영자가 어떤 문의(관심 플랜)인지 바로 구분할 수 있게
+const INQUIRY_TYPES = [
+  '단순 도입 문의',
+  '베이직 (직원 5명·월 9,900원)',
+  '프로 (직원 20명·월 29,900원)',
+  '엔터프라이즈 (무제한)',
+  '기타 문의',
+]
+
 export default function InquiryForm() {
   const navigate = useNavigate()
   const [source, setSource] = useState('')
+  const [inquiryType, setInquiryType] = useState('')
   const [businessName, setBusinessName] = useState('')
   const [phone, setPhone] = useState('')
   const [content, setContent] = useState('')
@@ -36,6 +46,7 @@ export default function InquiryForm() {
     try {
       await submitInquiry({
         source: source || null,
+        inquiry_type: inquiryType || null,
         business_name: businessName.trim(),
         phone: phone.trim(),
         content: content.trim() || null,
@@ -68,6 +79,20 @@ export default function InquiryForm() {
       <div className="mb-6">
         <h3 className="text-lg font-extrabold text-gray-800 mb-1">도입 문의하기</h3>
         <p className="text-xs text-gray-500">아직 고민 중이시라면, 지금 문의 남겨주세요</p>
+      </div>
+
+      {/* 문의 유형 */}
+      <div className="mb-4">
+        <label className="block text-xs font-bold text-gray-600 mb-1.5">문의 유형</label>
+        <select
+          value={inquiryType}
+          onChange={e => setInquiryType(e.target.value)}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white"
+        >
+          <option value="">선택해주세요 (선택)</option>
+          {INQUIRY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <p className="text-[11px] text-gray-400 mt-1">유료 플랜이 궁금하시면 관심 플랜을 선택해주세요.</p>
       </div>
 
       {/* 도입 경로 */}

@@ -10,6 +10,7 @@ type AdminTab = 'businesses' | 'inquiries'
 interface AdminInquiry {
   id: number
   source: string | null
+  inquiry_type: string | null
   business_name: string
   phone: string
   content: string | null
@@ -407,6 +408,7 @@ export default function AdminPage() {
                       <th className="text-left px-4 py-3 whitespace-nowrap">상태</th>
                       <th className="text-left px-4 py-3 whitespace-nowrap">접수</th>
                       <th className="text-left px-4 py-3 whitespace-nowrap">사업장명</th>
+                      <th className="text-left px-4 py-3 whitespace-nowrap">문의 유형</th>
                       <th className="text-left px-4 py-3 whitespace-nowrap">휴대폰</th>
                       <th className="text-left px-4 py-3 whitespace-nowrap">경로</th>
                       <th className="text-left px-4 py-3">문의 내용</th>
@@ -430,6 +432,13 @@ export default function AdminPage() {
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDateTime(q.created_at)}</td>
                         <td className="px-4 py-3 font-semibold whitespace-nowrap">{q.business_name}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
+                          {q.inquiry_type ? (
+                            <span className={`text-xs font-bold px-2 py-1 rounded-lg ${q.inquiry_type.includes('단순') || q.inquiry_type.includes('기타') ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-700'}`}>
+                              {q.inquiry_type}
+                            </span>
+                          ) : <span className="text-xs text-gray-400">-</span>}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <a href={`tel:${q.phone}`} className="text-blue-600 hover:underline">{q.phone}</a>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{q.source || '-'}</td>
@@ -441,7 +450,7 @@ export default function AdminPage() {
                       </tr>
                     ))}
                     {inquiries.length === 0 && (
-                      <tr><td colSpan={7} className="text-center text-gray-400 py-10">해당 상태의 문의가 없습니다</td></tr>
+                      <tr><td colSpan={8} className="text-center text-gray-400 py-10">해당 상태의 문의가 없습니다</td></tr>
                     )}
                   </tbody>
                 </table>

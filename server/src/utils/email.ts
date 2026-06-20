@@ -17,6 +17,7 @@ function esc(s: string | null | undefined) {
 export interface InquiryNotificationData {
   business_name: string
   phone: string
+  inquiry_type?: string | null
   source?: string | null
   content?: string | null
   agreed_marketing: boolean
@@ -46,6 +47,7 @@ export async function sendInquiryNotification(data: InquiryNotificationData) {
       <table style="width:100%;border-collapse:collapse;font-size:14px">
         <tr><td style="padding:10px 0;color:#6b7280;width:90px">사업장명</td><td style="padding:10px 0;font-weight:700">${esc(data.business_name)}</td></tr>
         <tr><td style="padding:10px 0;color:#6b7280;border-top:1px solid #f3f4f6">휴대폰</td><td style="padding:10px 0;border-top:1px solid #f3f4f6"><a href="tel:${esc(data.phone)}" style="color:#10b981;text-decoration:none;font-weight:700">${esc(data.phone)}</a></td></tr>
+        <tr><td style="padding:10px 0;color:#6b7280;border-top:1px solid #f3f4f6">문의 유형</td><td style="padding:10px 0;border-top:1px solid #f3f4f6"><b>${esc(data.inquiry_type) || '<span style="color:#9ca3af">(미선택)</span>'}</b></td></tr>
         <tr><td style="padding:10px 0;color:#6b7280;border-top:1px solid #f3f4f6">도입 경로</td><td style="padding:10px 0;border-top:1px solid #f3f4f6">${esc(data.source) || '<span style="color:#9ca3af">(미입력)</span>'}</td></tr>
         <tr><td style="padding:10px 0;color:#6b7280;border-top:1px solid #f3f4f6">접수 시각</td><td style="padding:10px 0;border-top:1px solid #f3f4f6">${esc(data.created_at)} KST</td></tr>
         <tr><td style="padding:10px 0;color:#6b7280;border-top:1px solid #f3f4f6">마케팅 동의</td><td style="padding:10px 0;border-top:1px solid #f3f4f6">${data.agreed_marketing ? '✅ 예' : '❌ 아니오'}</td></tr>
@@ -74,6 +76,7 @@ export async function sendInquiryNotification(data: InquiryNotificationData) {
     ``,
     `사업장명: ${data.business_name}`,
     `휴대폰:   ${data.phone}`,
+    `문의 유형: ${data.inquiry_type || '(미선택)'}`,
     `도입 경로: ${data.source || '(미입력)'}`,
     `접수 시각: ${data.created_at} KST`,
     `마케팅 동의: ${data.agreed_marketing ? '예' : '아니오'}`,

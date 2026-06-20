@@ -12,6 +12,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
   app.post<{
     Body: {
       source?: string | null
+      inquiry_type?: string | null
       business_name: string
       phone: string
       content?: string | null
@@ -31,7 +32,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const { source, business_name, phone, content, agreed_privacy, agreed_marketing } = req.body || ({} as any)
+      const { source, inquiry_type, business_name, phone, content, agreed_privacy, agreed_marketing } = req.body || ({} as any)
 
       // 검증
       if (!agreed_privacy) return reply.code(400).send({ error: '개인정보 수집·이용 동의가 필요합니다.' })
@@ -42,11 +43,12 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
       const text = (content || '').trim()
       if (text.length > 2000) return reply.code(400).send({ error: '문의 내용은 2000자 이내로 입력해주세요.' })
       const src = (source || '').trim().slice(0, 40)
+      const itype = (inquiry_type || '').trim().slice(0, 40)
 
       const result = db.prepare(
-        `INSERT INTO inquiries (source, business_name, phone, content, agreed_marketing, ip)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(src || null, name, ph, text || null, agreed_marketing ? 1 : 0, req.ip || null)
+        `INSERT INTO inquiries (source, inquiry_type, business_name, phone, content, agreed_marketing, ip)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(src || null, itype || null, name, ph, text || null, agreed_marketing ? 1 : 0, req.ip || null)
 
       // 이메일 알림 — fire-and-forget. 실패해도 사용자에게는 OK 응답.
       const row = db.prepare(
@@ -55,6 +57,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
       sendInquiryNotification({
         business_name: name,
         phone: ph,
+        inquiry_type: itype,
         source: src,
         content: text,
         agreed_marketing: !!agreed_marketing,
@@ -75,7 +78,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
       const limit = Math.min(Number(req.query?.limit) || 100, 500)
       const where = status && (ALLOWED_STATUS as readonly string[]).includes(status) ? 'WHERE status = ?' : ''
       const stmt = db.prepare(
-        `SELECT id, source, business_name, phone, content, agreed_marketing, ip, status, note, created_at, handled_at
+        `SELECT id, source, inquiry_type, business_name, phone, content, agreed_marketing, ip, status, note, created_at, handled_at
          FROM inquiries ${where} ORDER BY created_at DESC LIMIT ?`,
       )
       const rows = where ? stmt.all(status, limit) : stmt.all(limit)

@@ -196,6 +196,7 @@ export const verifyPin = (slug: string, pin: string) =>
 // 도입 문의 — 공개 (rate limit 적용됨)
 export const submitInquiry = (body: {
   source?: string | null
+  inquiry_type?: string | null
   business_name: string
   phone: string
   content?: string | null
