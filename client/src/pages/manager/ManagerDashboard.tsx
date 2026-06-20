@@ -6,6 +6,7 @@ import {
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
 } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
+import BusinessQR from '../../components/BusinessQR'
 import { getCurrentPosition } from '../../utils/geo'
 import type { Employee, Business, HomeMode, LeavePayCalcMode } from '../../types'
 
@@ -40,6 +41,7 @@ export default function ManagerDashboard() {
   const [leavePolicySaving, setLeavePolicySaving] = useState(false)
   const [showLeavePolicyForm, setShowLeavePolicyForm] = useState(false)
   const [showResigned, setShowResigned] = useState(false)
+  const [showQr, setShowQr] = useState(false)
   const [showHolidayPayForm, setShowHolidayPayForm] = useState(false)
 
   // 출근 SMS 알림
@@ -708,6 +710,23 @@ export default function ManagerDashboard() {
               className="w-full py-3 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600 transition disabled:opacity-50">
               {smsSaving ? '저장 중...' : '저장'}
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* 출퇴근 QR (매장 부착용) */}
+      <div className="mt-6 border-t border-gray-100 pt-6">
+        <button
+          onClick={() => setShowQr(v => !v)}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-semibold transition w-full"
+        >
+          <span>📱 출퇴근 QR</span>
+          <span className="text-xs px-2 py-0.5 rounded-full font-bold ml-1 bg-gray-100 text-gray-500">매장 부착용</span>
+          <span className="ml-auto">{showQr ? '▲' : '▼'}</span>
+        </button>
+        {showQr && (
+          <div className="mt-4">
+            <BusinessQR slug={slug} businessName={business?.name} />
           </div>
         )}
       </div>
