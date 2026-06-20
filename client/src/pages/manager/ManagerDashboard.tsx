@@ -257,9 +257,35 @@ export default function ManagerDashboard() {
   const atLimit = limit !== null && activeEmployees.length >= limit
   const notifAllowed = planHasNotifications(business?.plan) // 출퇴근 알림은 유료 전용
   const gpsAllowed = planHasGps(business?.plan)             // GPS 위치 제한은 유료 전용
+  const isFree = business?.plan === 'free'                  // 무료 플랜 — 업그레이드 배너 노출
 
   return (
     <div>
+      {/* 무료 플랜 업그레이드 배너 (U1) — 유료는 노출 안 됨 */}
+      {isFree && (
+        <div className={`mb-5 rounded-2xl p-4 border ${atLimit ? 'bg-red-50 border-red-200' : 'bg-gradient-to-r from-green-50 to-blue-50 border-green-100'}`}>
+          <div className="flex items-start gap-3">
+            <span className="text-2xl shrink-0">{atLimit ? '⚠️' : '🚀'}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-extrabold text-gray-800">
+                {atLimit
+                  ? `활성 직원 ${activeEmployees.length}/${limit}명 — 한도에 도달했어요`
+                  : '유료 플랜으로 더 편하게 관리하세요'}
+              </p>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                베이직(월 9,900원)으로 올리면 <b>직원 5명</b> + 출퇴근 SMS·카카오 알림 · GPS 위치 제한 · 급여명세서 출력까지.
+              </p>
+              <button
+                onClick={() => navigate('/?inquiry=' + encodeURIComponent('베이직 (직원 5명·월 9,900원)'))}
+                className={`mt-3 text-xs font-bold px-4 py-2 rounded-lg text-white transition ${atLimit ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
+              >
+                업그레이드 문의 →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="font-extrabold text-gray-800">직원 관리</h2>
