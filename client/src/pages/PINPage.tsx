@@ -125,12 +125,14 @@ export default function PINPage() {
               <p className="mb-1.5">• <b>구글 계정을 연결</b>한 사업장이면 위 <b>"구글로 로그인"</b>으로 바로 들어갈 수 있어요.</p>
             )}
             <p>• PIN으로만 쓰던 사업장이면 <b>운영자에게 PIN 재발급</b>을 요청하세요.</p>
-            <button
-              onClick={() => navigate('/?inquiry=' + encodeURIComponent('기타 문의'))}
-              className="mt-2.5 text-green-600 font-bold underline underline-offset-2"
+            <a
+              href="https://pf.kakao.com/_xdwVxjX"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block mt-2.5 text-green-600 font-bold underline underline-offset-2"
             >
-              PIN 재발급 문의하기 →
-            </button>
+              카카오톡으로 PIN 재발급 문의 →
+            </a>
           </div>
         )}
       </div>
