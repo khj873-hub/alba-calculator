@@ -5,7 +5,17 @@ const ADMIN_TOKEN_KEY = 'admin_token'
 
 type Plan = 'free' | 'basic' | 'pro' | 'enterprise' | 'paid'
 type InquiryStatus = 'new' | 'in_progress' | 'done' | 'spam'
-type AdminTab = 'businesses' | 'inquiries'
+type AdminTab = 'businesses' | 'inquiries' | 'stats'
+
+interface AdminStats {
+  generated_at: string
+  businesses: { total: number; paid: number; new7: number; new30: number; byPlan: { plan: string; n: number }[]; active7: number; active30: number }
+  employees: { active: number; total: number }
+  attendance: { today: number; last7: number; daily: { d: string; n: number }[] }
+  logins: { users7: number; users30: number }
+  notifications: { sent7: number; sent30: number }
+  inquiries: { total: number; new: number; byType: { t: string; n: number }[] }
+}
 
 interface AdminInquiry {
   id: number
@@ -124,6 +134,8 @@ export default function AdminPage() {
 
   // 탭 + 문의 내역
   const [tab, setTab] = useState<AdminTab>('businesses')
+  const [stats, setStats] = useState<AdminStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
   const [inquiries, setInquiries] = useState<AdminInquiry[]>([])
   const [inqCounts, setInqCounts] = useState<{ status: string; n: number }[]>([])
   const [inqFilter, setInqFilter] = useState<InquiryStatus | 'all'>('new')
@@ -164,6 +176,15 @@ export default function AdminPage() {
   }, [inqFilter])
 
   useEffect(() => { if (authed && tab === 'inquiries') loadInquiries() }, [authed, tab, loadInquiries])
+
+  const loadStats = useCallback(async () => {
+    if (!getToken()) return
+    setStatsLoading(true)
+    try { setStats(await adminApi<AdminStats>('/admin/stats')) }
+    catch (e: any) { setError(e.message) }
+    finally { setStatsLoading(false) }
+  }, [])
+  useEffect(() => { if (authed && tab === 'stats') loadStats() }, [authed, tab, loadStats])
 
   const handleInquiryStatus = async (id: number, status: InquiryStatus) => {
     try {
@@ -377,6 +398,14 @@ export default function AdminPage() {
             🏪 사업장 ({bizList.length})
           </button>
           <button
+            onClick={() => setTab('stats')}
+            className={`px-4 py-2.5 text-sm font-bold transition border-b-2 -mb-px ${
+              tab === 'stats' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            📊 통계
+          </button>
+          <button
             onClick={() => setTab('inquiries')}
             className={`px-4 py-2.5 text-sm font-bold transition border-b-2 -mb-px relative ${
               tab === 'inquiries' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -390,6 +419,95 @@ export default function AdminPage() {
             )}
           </button>
         </div>
+
+        {tab === 'stats' && (
+          <div>
+            {statsLoading && !stats ? (
+              <p className="text-center text-gray-400 py-10">불러오는 중...</p>
+            ) : !stats ? (
+              <p className="text-center text-gray-400 py-10">데이터를 불러올 수 없습니다.</p>
+            ) : (
+              <div className="flex flex-col gap-6">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-400">기준 시각 {stats.generated_at?.slice(0, 16)}</p>
+                  <button onClick={loadStats} className="text-xs font-semibold text-blue-600 hover:text-blue-800">↻ 새로고침</button>
+                </div>
+
+                {/* KPI 카드 */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: '전체 사업장', value: stats.businesses.total, sub: `7일 신규 ${stats.businesses.new7}` },
+                    { label: '유료 사업장', value: stats.businesses.paid, sub: `전환율 ${stats.businesses.total ? Math.round(stats.businesses.paid / stats.businesses.total * 100) : 0}%` },
+                    { label: '활성 사업장(7일)', value: stats.businesses.active7, sub: `30일 ${stats.businesses.active30}` },
+                    { label: '활성 직원', value: stats.employees.active, sub: `전체 ${stats.employees.total}` },
+                    { label: '오늘 출퇴근', value: stats.attendance.today, sub: `7일 ${stats.attendance.last7}건` },
+                    { label: '로그인 사용자(7일)', value: stats.logins.users7, sub: `30일 ${stats.logins.users30}` },
+                    { label: '알림 발송(7일)', value: stats.notifications.sent7, sub: `30일 ${stats.notifications.sent30}` },
+                    { label: '신규 문의', value: stats.inquiries.new, sub: `전체 ${stats.inquiries.total}` },
+                  ].map(k => (
+                    <div key={k.label} className="bg-white border border-gray-100 rounded-2xl p-4">
+                      <div className="text-xs text-gray-400 mb-1">{k.label}</div>
+                      <div className="text-2xl font-extrabold text-gray-800">{k.value.toLocaleString()}</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">{k.sub}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 플랜 분포 */}
+                <div className="bg-white border border-gray-100 rounded-2xl p-5">
+                  <h3 className="text-sm font-extrabold text-gray-800 mb-3">플랜 분포</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {stats.businesses.byPlan.map(p => (
+                      <span key={p.plan} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-50 text-gray-600 border border-gray-100">
+                        {p.plan} · {p.n}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 일별 출퇴근 (최근 7일) */}
+                <div className="bg-white border border-gray-100 rounded-2xl p-5">
+                  <h3 className="text-sm font-extrabold text-gray-800 mb-3">일별 출퇴근 (최근 7일)</h3>
+                  {stats.attendance.daily.length === 0 ? (
+                    <p className="text-xs text-gray-400">기록 없음</p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {(() => {
+                        const max = Math.max(...stats.attendance.daily.map(d => d.n), 1)
+                        return stats.attendance.daily.map(d => (
+                          <div key={d.d} className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 w-20 shrink-0">{d.d.slice(5)}</span>
+                            <div className="flex-1 bg-gray-50 rounded h-5 overflow-hidden">
+                              <div className="h-full bg-blue-400 rounded" style={{ width: `${d.n / max * 100}%` }} />
+                            </div>
+                            <span className="text-xs font-bold text-gray-600 w-10 text-right">{d.n}</span>
+                          </div>
+                        ))
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                {/* 문의 유형 분포 */}
+                <div className="bg-white border border-gray-100 rounded-2xl p-5">
+                  <h3 className="text-sm font-extrabold text-gray-800 mb-3">문의 유형 분포</h3>
+                  {stats.inquiries.byType.length === 0 ? (
+                    <p className="text-xs text-gray-400">문의 없음</p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {stats.inquiries.byType.map(t => (
+                        <div key={t.t} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">{t.t}</span>
+                          <span className="font-bold text-gray-800">{t.n}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {tab === 'inquiries' && (
           <div>

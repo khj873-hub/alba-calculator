@@ -214,4 +214,61 @@ export default async function adminRoutes(app: FastifyInstance) {
   app.get('/api/admin/me', { preHandler: requireAdminAuth }, async () => {
     return { ok: true, role: 'admin' }
   })
+
+  // 운영자 통계 대시보드 (기존 DB 집계) — P1
+  app.get('/api/admin/stats', { preHandler: requireAdminAuth }, async () => {
+    const kst = (offsetMs = 0) =>
+      new Date(Date.now() + 9 * 60 * 60 * 1000 + offsetMs).toISOString().replace('T', ' ').slice(0, 19)
+    const todayStart = kst().slice(0, 10) + ' 00:00:00'
+    const cutoff7 = kst(-7 * 86400000)
+    const cutoff30 = kst(-30 * 86400000)
+    const one = (sql: string, ...p: any[]) => (db.prepare(sql).get(...p) as any)?.n ?? 0
+
+    // 사업장
+    const bizTotal = one('SELECT COUNT(*) n FROM businesses')
+    const bizByPlan = db.prepare('SELECT plan, COUNT(*) n FROM businesses GROUP BY plan').all() as any[]
+    const bizNew7 = one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff7)
+    const bizNew30 = one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff30)
+    const paidTotal = one("SELECT COUNT(*) n FROM businesses WHERE plan != 'free'")
+
+    // 활성 사업장(최근 출퇴근 발생 기준)
+    const activeBiz7 = one(
+      'SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff7)
+    const activeBiz30 = one(
+      'SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff30)
+
+    // 직원
+    const empActive = one("SELECT COUNT(*) n FROM employees WHERE status = 'active'")
+    const empTotal = one('SELECT COUNT(*) n FROM employees')
+
+    // 출퇴근
+    const attToday = one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', todayStart)
+    const att7 = one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', cutoff7)
+    const attDaily = db.prepare(
+      "SELECT substr(clock_in,1,10) d, COUNT(*) n FROM attendance WHERE clock_in >= ? GROUP BY d ORDER BY d").all(cutoff7) as any[]
+
+    // 로그인(활성 사용자)
+    const loginUsers7 = one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff7)
+    const loginUsers30 = one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff30)
+
+    // 알림 발송
+    const notifSent7 = one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff7)
+    const notifSent30 = one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff30)
+
+    // 문의
+    const inqTotal = one('SELECT COUNT(*) n FROM inquiries')
+    const inqNew = one("SELECT COUNT(*) n FROM inquiries WHERE status = 'new'")
+    const inqByType = db.prepare(
+      "SELECT COALESCE(inquiry_type,'(미선택)') t, COUNT(*) n FROM inquiries GROUP BY t ORDER BY n DESC").all() as any[]
+
+    return {
+      generated_at: kst(),
+      businesses: { total: bizTotal, paid: paidTotal, new7: bizNew7, new30: bizNew30, byPlan: bizByPlan, active7: activeBiz7, active30: activeBiz30 },
+      employees: { active: empActive, total: empTotal },
+      attendance: { today: attToday, last7: att7, daily: attDaily },
+      logins: { users7: loginUsers7, users30: loginUsers30 },
+      notifications: { sent7: notifSent7, sent30: notifSent30 },
+      inquiries: { total: inqTotal, new: inqNew, byType: inqByType },
+    }
+  })
 }
