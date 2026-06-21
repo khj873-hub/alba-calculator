@@ -3,7 +3,7 @@ import { db } from '../db'
 import { requireManagerAuth, getValidSession } from '../middleware/auth'
 import { splitByMidnight } from '../utils/segments'
 import { notifyCheckIn, notifyCheckOut } from '../utils/notify'
-import { planAllows } from '../plans'
+import { planAllows, activeLimit } from '../plans'
 
 // 출근 알림(SMS) 발송 — 출근 처리와 완전히 분리.
 // 어떤 이유로 실패하든 예외를 밖으로 던지지 않아 출근 기록에 영향이 없다.
@@ -63,8 +63,9 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 }
 
 function checkLocation(slug: string, lat?: number, lng?: number, sessionToken?: string): string | null {
-  const biz = db.prepare('SELECT lat, lng, radius_meters FROM businesses WHERE slug = ?').get(slug) as any
+  const biz = db.prepare('SELECT lat, lng, radius_meters, plan FROM businesses WHERE slug = ?').get(slug) as any
   if (!biz?.lat || !biz?.lng) return null // 위치 미설정 → 제한 없음
+  if (!planAllows(biz.plan, 'gps')) return null // 유료 전용 — 무료(만료 다운그레이드 포함)는 기존 lat/lng 있어도 GPS 미적용. 재업그레이드 시 자동 복구
   if (sessionToken && getValidSession(slug, sessionToken)) return null // 유효 세션(관리자) → 우회
   if (lat == null || lng == null) return '위치 정보가 필요합니다. 위치 권한을 허용해주세요.'
   const dist = Math.round(haversine(biz.lat, biz.lng, lat, lng))
@@ -120,6 +121,28 @@ function resolveEmployeeId(slug: string, employeeId?: number, token?: string): n
   return null
 }
 
+// 출퇴근 인원 게이트: 활성 인원이 플랜 한도를 넘으면 "최근 등록한 limit명"만 출퇴근 허용.
+// 최근 기준 = 등록 순(id) 내림차순. 이 직원보다 나중에 등록된 활성 직원 수가 limit 미만이면 허용.
+// 무제한 플랜(limit=null)이거나 한도 이내면 항상 허용.
+function attendanceGate(slug: string, empId: number): { ok: true } | { ok: false; limit: number } {
+  const biz = db.prepare('SELECT id, plan FROM businesses WHERE slug = ?').get(slug) as any
+  if (!biz) return { ok: true }
+  const limit = activeLimit(biz.plan)
+  if (limit === null) return { ok: true } // 무제한
+  const emp = db.prepare(
+    "SELECT id FROM employees WHERE id = ? AND business_id = ? AND status = 'active'"
+  ).get(empId, biz.id) as any
+  if (!emp) return { ok: true } // 비활성/타사업장은 여기서 판정하지 않음
+  const newer = db.prepare(
+    "SELECT COUNT(*) AS n FROM employees WHERE business_id = ? AND status = 'active' AND id > ?"
+  ).get(biz.id, empId) as any
+  return newer.n < limit ? { ok: true } : { ok: false, limit }
+}
+
+function attendanceLimitMessage(limit: number): string {
+  return `현재 플랜에서는 최근 등록한 ${limit}명만 출퇴근을 기록할 수 있습니다. 모든 직원이 사용하려면 플랜을 업그레이드해 주세요.`
+}
+
 export default async function attendanceRoutes(app: FastifyInstance) {
   // 출근 (employee_id 또는 token 둘 중 하나)
   app.post<{ Params: { slug: string }; Body: { employee_id?: number; token?: string; lat?: number; lng?: number } }>(
@@ -131,6 +154,16 @@ export default async function attendanceRoutes(app: FastifyInstance) {
 
       const empId = resolveEmployeeId(req.params.slug, employee_id, token)
       if (!empId) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+
+      const gate = attendanceGate(req.params.slug, empId)
+      if (!gate.ok) {
+        // error=친절 메시지(클라 표시용), code=머신 코드 — 기존 PLAN_LIMIT 컨벤션 동일
+        return reply.code(403).send({
+          error: attendanceLimitMessage(gate.limit),
+          code: 'PLAN_LIMIT_ATTENDANCE',
+          limit: gate.limit,
+        })
+      }
 
       const already = db.prepare(
         'SELECT id FROM attendance WHERE employee_id = ? AND clock_out IS NULL'
