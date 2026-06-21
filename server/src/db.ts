@@ -137,7 +137,8 @@ const migrate = db.transaction(() => {
   if (!bizColsV3.find((c: any) => c.name === 'suspended_at')) {
     db.exec('ALTER TABLE businesses ADD COLUMN suspended_at TEXT')
   }
-  // 요금제: 'free' | 'paid' (운영자가 직접 분류, 자동 결제 연동은 별도 단계)
+  // 요금제: free/basic/pro/enterprise (+레거시 paid). 정의·한도는 plans.ts.
+  // plan_expires_at 만료 시 index.ts가 무료(free)로 자동 다운그레이드.
   // CHECK 제약은 ALTER TABLE에서 일부 환경 호환성 이슈 → 앱 레이어에서 검증
   if (!bizColsV3.find((c: any) => c.name === 'plan')) {
     db.exec("ALTER TABLE businesses ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")

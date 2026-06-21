@@ -54,10 +54,12 @@ app.addHook('onRequest', async (req, reply) => {
 
   const biz = db.prepare('SELECT is_active, plan, plan_expires_at FROM businesses WHERE slug = ?').get(slug) as any
   if (biz) {
-    // 유료 결제 만료 자동 정지 — 활성 상태 + 유료 + 기한 지남
-    if (biz.is_active === 1 && biz.plan === 'paid' && biz.plan_expires_at && biz.plan_expires_at < todayKSTYmd()) {
-      db.prepare('UPDATE businesses SET is_active = 0, suspended_at = ? WHERE slug = ?').run(nowKST(), slug)
-      biz.is_active = 0
+    // 유료 결제 만료 → 무료 자동 다운그레이드 (정지가 아니라 무료로 전환: 3명 한도 + 알림 OFF).
+    // 모든 유료 플랜(basic/pro/enterprise/레거시 paid) 대상. free는 만료 개념 없음.
+    if (biz.plan !== 'free' && biz.plan_expires_at && biz.plan_expires_at < todayKSTYmd()) {
+      db.prepare("UPDATE businesses SET plan = 'free', plan_expires_at = NULL WHERE slug = ?").run(slug)
+      biz.plan = 'free'
+      biz.plan_expires_at = null
     }
     if (biz.is_active === 0) {
       return reply.code(403).send({
@@ -109,9 +111,25 @@ if (isProd) {
   app.setNotFoundHandler((_req, reply) => reply.sendFile('index.html', clientDist))
 }
 
+// 시작 시 이미 만료된 유료 사업장을 무료로 일괄 다운그레이드.
+// 미들웨어가 요청 시 lazy로도 처리하지만, 요청이 없어도 즉시 일관성을 맞춰
+// 어드민 통계·이미 만료된 건(예: 배포 시점에 만료 상태)을 바로 정리한다.
+function downgradeExpiredPlans() {
+  const today = todayKSTYmd()
+  const res = db
+    .prepare(
+      "UPDATE businesses SET plan = 'free', plan_expires_at = NULL WHERE plan != 'free' AND plan_expires_at IS NOT NULL AND plan_expires_at < ?"
+    )
+    .run(today)
+  if (res.changes > 0) {
+    console.log(`[plan] 만료 사업장 ${res.changes}건 무료로 다운그레이드`)
+  }
+}
+
 const PORT = Number(process.env.PORT) || 3002
 app.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
   if (err) { console.error(err); process.exit(1) }
   console.log(`Alba server running on http://localhost:${PORT}`)
+  downgradeExpiredPlans()
   startBackup()
 })
