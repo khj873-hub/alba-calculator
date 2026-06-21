@@ -155,6 +155,12 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const empId = resolveEmployeeId(req.params.slug, employee_id, token)
       if (!empId) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
 
+      // 퇴사 직원은 출근 불가 (직접 링크·구 QR로의 접근 차단). 퇴근은 열린 근무 닫기 위해 허용.
+      const empStatus = db.prepare('SELECT status FROM employees WHERE id = ?').get(empId) as any
+      if (empStatus?.status === 'resigned') {
+        return reply.code(403).send({ error: '퇴사 처리된 직원은 출근할 수 없습니다.' })
+      }
+
       const gate = attendanceGate(req.params.slug, empId)
       if (!gate.ok) {
         // error=친절 메시지(클라 표시용), code=머신 코드 — 기존 PLAN_LIMIT 컨벤션 동일

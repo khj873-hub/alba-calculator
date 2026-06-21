@@ -52,7 +52,10 @@ function KioskList({ slug, navigate }: { slug: string; navigate: (to: string) =>
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchEmployees(slug).then(setEmployees).finally(() => setLoading(false))
+    // 키오스크에는 재직(active) 직원만 노출 — 퇴사자는 출근 대상이 아님(관리자 화면과 일치)
+    fetchEmployees(slug)
+      .then(list => setEmployees(list.filter(e => e.status === 'active')))
+      .finally(() => setLoading(false))
   }, [slug])
 
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
