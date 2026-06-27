@@ -19,7 +19,9 @@ function todayKSTYmd() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
-const app = Fastify({ logger: false })
+// trustProxy: Railway 등 리버스 프록시 뒤에서 req.ip를 X-Forwarded-For의 실제 클라이언트 IP로 해석.
+// 미설정 시 req.ip가 프록시 연결마다 달라져 IP 기반 rate-limit(PIN 브루트포스 방어)이 무력화된다.
+const app = Fastify({ logger: false, trustProxy: true })
 
 const isProd = process.env.NODE_ENV === 'production'
 
