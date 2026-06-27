@@ -27,7 +27,8 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
           max: 5,
           timeWindow: '1 minute',
           keyGenerator: (req: any) => `inquiry:${req.ip}`,
-          errorResponseBuilder: () => ({ error: '잠시 후 다시 시도해주세요.' }),
+          // statusCode를 명시해야 429로 응답(미지정 시 Fastify가 500 처리).
+          errorResponseBuilder: () => ({ statusCode: 429, error: '잠시 후 다시 시도해주세요.' }),
         },
       },
     },

@@ -3,7 +3,6 @@ import cors from '@fastify/cors'
 import rateLimit from '@fastify/rate-limit'
 import staticFiles from '@fastify/static'
 import path from 'path'
-import { randomBytes } from 'crypto'
 import 'dotenv/config'
 import businessesRoutes from './routes/businesses'
 import employeesRoutes from './routes/employees'
@@ -12,15 +11,10 @@ import timeOffRoutes from './routes/timeOff'
 import oauthRoutes from './routes/oauth'
 import adminRoutes from './routes/admin'
 import inquiriesRoutes from './routes/inquiries'
-import { db, verifyPinHash } from './db'
+import authRoutes from './routes/auth'
+import { db } from './db'
 import { startBackup } from './backup'
 
-function nowKST() {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
-}
-function expiresKST(hours = 24) {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000 + hours * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
-}
 function todayKSTYmd() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
@@ -28,9 +22,20 @@ function todayKSTYmd() {
 const app = Fastify({ logger: false })
 
 const isProd = process.env.NODE_ENV === 'production'
+
+// CORS — prod에서는 명시 도메인만 허용. ALLOWED_ORIGIN 우선, 없으면 PUBLIC_ORIGIN(사이트 도메인) 사용.
+// 둘 다 없을 때만 와일드카드(true)로 폴백하되 경고를 남겨 운영자가 인지하게 한다.
+const allowedOrigin = process.env.ALLOWED_ORIGIN || process.env.PUBLIC_ORIGIN
+if (isProd && !allowedOrigin) {
+  console.warn('[cors] ⚠️  ALLOWED_ORIGIN/PUBLIC_ORIGIN 미설정 — 모든 origin 허용(보안 권장 X). 환경변수 설정 필요.')
+}
 app.register(cors, {
-  origin: isProd ? (process.env.ALLOWED_ORIGIN || true) : ['http://localhost:5173', 'http://localhost:5174']
+  origin: isProd ? (allowedOrigin || true) : ['http://localhost:5173', 'http://localhost:5174']
 })
+
+// Rate-limit 플러그인 등록. global:false → 전역엔 미적용, 라우트별 config.rateLimit만 활성화
+// (PIN 브루트포스 방어, 문의 스팸 방어). 등록이 빠지면 라우트의 config.rateLimit이 조용히 무시된다.
+app.register(rateLimit, { global: false })
 
 // 사업장 정지(is_active=0) 시 사장·직원 API 차단. 어드민·OAuth·health는 화이트리스트.
 app.addHook('onRequest', async (req, reply) => {
@@ -77,33 +82,9 @@ app.register(timeOffRoutes)
 app.register(oauthRoutes)
 app.register(adminRoutes)
 app.register(inquiriesRoutes)
+app.register(authRoutes)
 
 app.get('/api/health', async () => ({ ok: true }))
-
-// 사업장별 PIN 인증 → 세션 토큰 발급 (브루트포스 방어: slug+IP당 1분 10회)
-app.post<{ Params: { slug: string }; Body: { pin: string } }>(
-  '/api/:slug/auth/pin',
-  {
-    config: {
-      rateLimit: {
-        max: 10,
-        timeWindow: '1 minute',
-        keyGenerator: (req: any) => `pin:${req.params?.slug}:${req.ip}`,
-        errorResponseBuilder: () => ({ error: 'PIN 시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요.' })
-      }
-    }
-  },
-  async (req, reply) => {
-    const biz = db.prepare('SELECT manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
-    if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
-    if (!verifyPinHash(req.body.pin, biz.manager_pin)) return reply.code(401).send({ error: 'PIN이 올바르지 않습니다' })
-    // 만료 세션 정리 후 새 토큰 발급
-    db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
-    const token = randomBytes(32).toString('hex')
-    db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)').run(token, req.params.slug, expiresKST(24))
-    return { ok: true, token }
-  }
-)
 
 if (isProd) {
   const clientDist = path.resolve(__dirname, '../../client/dist')
