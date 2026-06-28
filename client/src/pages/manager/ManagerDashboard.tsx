@@ -4,7 +4,9 @@ import {
   fetchEmployees, fetchBusiness, clockIn, clockOut, deleteEmployee, resignEmployee, restoreEmployee,
   setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, planHasGps, upgradePlanSummary, PlanLimitError,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
+  planHasDepartments, fetchDepartments, createDepartment, deleteDepartment, assignEmployeeDepartment,
 } from '../../api'
+import type { Department } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import BusinessQR from '../../components/BusinessQR'
 import { getCurrentPosition } from '../../utils/geo'
@@ -23,6 +25,10 @@ export default function ManagerDashboard() {
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [business, setBusiness] = useState<Business | null>(null)
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [newDeptName, setNewDeptName] = useState('')
+  const [deptSaving, setDeptSaving] = useState(false)
+  const [showDeptForm, setShowDeptForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
   const [error, setError] = useState('')
@@ -65,6 +71,12 @@ export default function ManagerDashboard() {
       const [emps, biz] = await Promise.all([fetchEmployees(slug), fetchBusiness(slug)])
       setEmployees(emps)
       setBusiness(biz)
+      // 부서는 엔터 전용 — 해당 플랜일 때만 로드(비엔터는 빈 배열)
+      if (planHasDepartments(biz.plan)) {
+        fetchDepartments(slug).then(setDepartments).catch(() => setDepartments([]))
+      } else {
+        setDepartments([])
+      }
       setHomeModeState(biz.home_mode === 'private' ? 'private' : 'kiosk')
       if (biz.radius_meters) setRadius(biz.radius_meters)
       setTimeOffEnabled((biz.time_off_enabled ?? 0) === 1)
@@ -80,6 +92,30 @@ export default function ManagerDashboard() {
   }, [slug])
 
   useEffect(() => { load() }, [load])
+
+  // 부서(엔터 전용) — 추가/삭제/배정. 게이트는 서버에서도 403으로 막힘(이중 방어).
+  const handleAddDept = async () => {
+    const name = newDeptName.trim()
+    if (!name) return
+    setDeptSaving(true); setError('')
+    try {
+      await createDepartment(slug, name)
+      setNewDeptName('')
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : '부서 추가에 실패했습니다') }
+    finally { setDeptSaving(false) }
+  }
+  const handleDeleteDept = async (d: Department) => {
+    if (!confirm(`'${d.name}' 부서를 삭제할까요?\n소속 직원은 '미배속'으로 바뀌며, 직원·근태 기록은 그대로 보존됩니다.`)) return
+    setError('')
+    try { await deleteDepartment(slug, d.id); await load() }
+    catch (e) { setError(e instanceof Error ? e.message : '부서 삭제에 실패했습니다') }
+  }
+  const handleAssignDept = async (emp: Employee, departmentId: number | null) => {
+    setError('')
+    try { await assignEmployeeDepartment(slug, emp.id, departmentId); await load() }
+    catch (e) { setError(e instanceof Error ? e.message : '부서 배정에 실패했습니다') }
+  }
 
   // 관리자 출퇴근: PIN 헤더로 위치 우회
   const handleClock = async (emp: Employee) => {
@@ -288,6 +324,63 @@ export default function ManagerDashboard() {
         </div>
       )}
 
+      {/* 부서 관리 (엔터프라이즈 전용) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">
+        <button onClick={() => setShowDeptForm(v => !v)} className="w-full flex items-center justify-between">
+          <span className="font-extrabold text-gray-800 flex items-center gap-1.5">
+            🏢 부서 관리
+            {!planHasDepartments(business?.plan) && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700">🔒 엔터프라이즈</span>
+            )}
+            {planHasDepartments(business?.plan) && departments.length > 0 && (
+              <span className="text-xs text-gray-400 font-normal">{departments.length}개</span>
+            )}
+          </span>
+          <span className="text-gray-400 text-sm">{showDeptForm ? '▲' : '▼'}</span>
+        </button>
+
+        {showDeptForm && (planHasDepartments(business?.plan) ? (
+          <div className="mt-4">
+            {departments.length > 0 ? (
+              <div className="flex flex-col gap-2 mb-3">
+                {departments.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                    <span className="text-sm font-semibold text-gray-700">
+                      {d.name} <span className="text-xs text-gray-400 font-normal">· {d.employee_count}명</span>
+                    </span>
+                    <button onClick={() => handleDeleteDept(d)} className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50 transition">삭제</button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 mb-3">아직 부서가 없습니다. 아래에서 추가하세요.</p>
+            )}
+            <div className="flex gap-2">
+              <input
+                value={newDeptName}
+                onChange={(e) => setNewDeptName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddDept() }}
+                placeholder="부서명 (예: 홀, 주방)"
+                className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-green-300"
+              />
+              <button onClick={handleAddDept} disabled={deptSaving || !newDeptName.trim()}
+                className="text-sm font-bold text-white bg-green-500 hover:bg-green-600 rounded-lg px-4 py-2 disabled:opacity-50">추가</button>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">부서를 2개 이상 만들면 키오스크에서 부서 선택 화면이 먼저 나옵니다.</p>
+          </div>
+        ) : (
+          <div className="mt-4 text-center bg-gray-50 rounded-xl py-6 px-4">
+            <div className="text-2xl mb-2">🔒</div>
+            <p className="text-sm text-gray-600 font-semibold mb-1">부서 관리는 엔터프라이즈 전용입니다</p>
+            <p className="text-xs text-gray-400 mb-3">직원을 홀·주방 등 부서로 나눠 키오스크에서 빠르게 찾게 해줍니다.</p>
+            <button onClick={() => navigate('/?inquiry=' + encodeURIComponent('엔터프라이즈 (직원 무제한·부서 관리)'))}
+              className="text-sm font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg px-4 py-2 transition">
+              플랜 업그레이드 문의
+            </button>
+          </div>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="font-extrabold text-gray-800">직원 관리</h2>
@@ -361,6 +454,20 @@ export default function ManagerDashboard() {
               >
                 {actionId === emp.id ? '처리 중...' : emp.is_working ? '퇴근 처리 🔴' : '출근 처리 🟢'}
               </button>
+
+              {planHasDepartments(business?.plan) && departments.length > 0 && (
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="text-xs text-gray-400 shrink-0">부서</span>
+                  <select
+                    value={emp.department_id ?? ''}
+                    onChange={(e) => handleAssignDept(emp, e.target.value ? Number(e.target.value) : null)}
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 text-gray-700"
+                  >
+                    <option value="">미배속</option>
+                    {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+              )}
 
               <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
                 <button

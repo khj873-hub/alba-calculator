@@ -32,13 +32,13 @@ export class PlanLimitError extends Error {
 }
 
 // 클라이언트 플랜 표시 정보 (서버 plans.ts 와 동일하게 유지)
-export interface PlanDisplay { label: string; maxActive: number | null; monthlyPrice: number | null; notifications: boolean; gps: boolean; payslip: boolean }
+export interface PlanDisplay { label: string; maxActive: number | null; monthlyPrice: number | null; notifications: boolean; gps: boolean; payslip: boolean; departments: boolean }
 export const PLANS_DISPLAY: Record<string, PlanDisplay> = {
-  free:       { label: '무료',         maxActive: 3,    monthlyPrice: 0,     notifications: false, gps: false, payslip: false },
-  basic:      { label: '베이직',       maxActive: 5,    monthlyPrice: 9900,  notifications: true,  gps: true,  payslip: true },
-  pro:        { label: '프로',         maxActive: 20,   monthlyPrice: 29900, notifications: true,  gps: true,  payslip: true },
-  enterprise: { label: '엔터프라이즈', maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true },
-  paid:       { label: '유료',         maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true },
+  free:       { label: '무료',         maxActive: 3,    monthlyPrice: 0,     notifications: false, gps: false, payslip: false, departments: false },
+  basic:      { label: '베이직',       maxActive: 5,    monthlyPrice: 9900,  notifications: true,  gps: true,  payslip: true,  departments: false },
+  pro:        { label: '프로',         maxActive: 20,   monthlyPrice: 29900, notifications: true,  gps: true,  payslip: true,  departments: false },
+  enterprise: { label: '엔터프라이즈', maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true,  departments: true },
+  paid:       { label: '유료',         maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true,  departments: true },
 }
 // 유료 단계 목록 (업그레이드 안내용 — 무료/레거시 제외)
 export const UPGRADE_PLANS = ['basic', 'pro', 'enterprise']
@@ -57,6 +57,10 @@ export function planHasGps(plan?: string): boolean {
 }
 export function planHasPayslip(plan?: string): boolean {
   return planInfo(plan).payslip
+}
+// 부서 그룹은 엔터프라이즈 전용
+export function planHasDepartments(plan?: string): boolean {
+  return planInfo(plan).departments
 }
 // 업그레이드 플랜 요약 (모달/안내용): "베이직 10명 9,900원 · 프로 30명 29,900원 · 엔터프라이즈 무제한 별도문의"
 export function upgradePlanSummary(): string {
@@ -157,6 +161,21 @@ export const resignEmployee = (slug: string, id: number) =>
   req<Employee>(`/${slug}/employees/${id}/resign`, { method: 'POST', body: JSON.stringify({}) }, getStoredToken(slug))
 export const restoreEmployee = (slug: string, id: number) =>
   req<Employee>(`/${slug}/employees/${id}/restore`, { method: 'POST', body: JSON.stringify({}) }, getStoredToken(slug))
+// 직원 부서 배정(개별) — 엔터프라이즈 전용. department_id=null 이면 미배속 해제.
+export const assignEmployeeDepartment = (slug: string, id: number, department_id: number | null) =>
+  req<Employee>(`/${slug}/employees/${id}/department`, { method: 'PATCH', body: JSON.stringify({ department_id }) }, getStoredToken(slug))
+
+// ── 부서(Department) ──────────────────────────────────────────
+export interface Department { id: number; name: string; sort_order: number; employee_count: number }
+export const fetchDepartments = (slug: string) =>
+  req<Department[]>(`/${slug}/departments`)
+export const createDepartment = (slug: string, name: string) =>
+  req<Department>(`/${slug}/departments`, { method: 'POST', body: JSON.stringify({ name }) }, getStoredToken(slug))
+export const updateDepartment = (slug: string, id: number, body: { name?: string; sort_order?: number }) =>
+  req<Department>(`/${slug}/departments/${id}`, { method: 'PUT', body: JSON.stringify(body) }, getStoredToken(slug))
+export const deleteDepartment = (slug: string, id: number) =>
+  req<{ ok: boolean; unassigned: number }>(`/${slug}/departments/${id}`, { method: 'DELETE' }, getStoredToken(slug))
+
 export const regenerateEmployeeToken = (slug: string, id: number) =>
   req<{ ok: boolean; access_token: string }>(`/${slug}/employees/${id}/regenerate-token`, {
     method: 'POST', body: JSON.stringify({})

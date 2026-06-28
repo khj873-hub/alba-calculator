@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchEmployees, fetchBusiness, ServiceSuspendedError } from '../api'
+import { fetchEmployees, fetchBusiness, fetchDepartments, planHasDepartments, ServiceSuspendedError } from '../api'
+import type { Department } from '../api'
 import { useSlug } from '../hooks/useSlug'
 import SuspendedNotice from '../components/SuspendedNotice'
 import type { Employee } from '../types'
@@ -29,11 +30,12 @@ export default function HomePage() {
   const navigate = useNavigate()
   const slug = useSlug()
   const [mode, setMode] = useState<'kiosk' | 'private' | null>(null)
+  const [plan, setPlan] = useState<string | undefined>(undefined)
   const [suspended, setSuspended] = useState(false)
 
   useEffect(() => {
     fetchBusiness(slug)
-      .then(biz => setMode(biz.home_mode === 'private' ? 'private' : 'kiosk'))
+      .then(biz => { setPlan(biz.plan); setMode(biz.home_mode === 'private' ? 'private' : 'kiosk') })
       .catch(e => {
         if (e instanceof ServiceSuspendedError) setSuspended(true)
         else setMode('kiosk')
@@ -43,7 +45,7 @@ export default function HomePage() {
   if (suspended) return <SuspendedNotice slug={slug} />
   if (mode === null) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
   if (mode === 'private') return <PrivateGuide slug={slug} navigate={navigate} />
-  return <KioskList slug={slug} navigate={navigate} />
+  return <KioskList slug={slug} navigate={navigate} plan={plan} />
 }
 
 function PrivateGuide({ slug, navigate }: { slug: string; navigate: (to: string) => void }) {
@@ -67,25 +69,80 @@ function PrivateGuide({ slug, navigate }: { slug: string; navigate: (to: string)
   )
 }
 
-function KioskList({ slug, navigate }: { slug: string; navigate: (to: string) => void }) {
+function KioskList({ slug, navigate, plan }: { slug: string; navigate: (to: string) => void; plan?: string }) {
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
+  // 부서 2단계 네비 선택 상태. null=부서 선택 화면, number=부서id, 'unassigned'=미배속
+  const [selectedDept, setSelectedDept] = useState<number | 'unassigned' | null>(null)
 
   useEffect(() => {
     // 키오스크에는 재직(active) 직원만 노출 — 퇴사자는 출근 대상이 아님(관리자 화면과 일치)
-    fetchEmployees(slug)
-      .then(list => setEmployees(list.filter(e => e.status === 'active')))
+    const empP = fetchEmployees(slug).then(list => list.filter(e => e.status === 'active'))
+    // 부서는 엔터 전용. 비엔터는 호출 자체를 생략(빈 배열) → 기존 단일 리스트 동작.
+    const deptP = planHasDepartments(plan) ? fetchDepartments(slug).catch(() => [] as Department[]) : Promise.resolve([] as Department[])
+    Promise.all([empP, deptP])
+      .then(([emps, depts]) => { setEmployees(emps); setDepartments(depts) })
       .finally(() => setLoading(false))
-  }, [slug])
+  }, [slug, plan])
 
   if (loading) return <div className="text-center text-gray-400 py-20">불러오는 중...</div>
 
-  const showSearch = employees.length >= SEARCH_THRESHOLD
-  const visible = showSearch ? employees.filter(e => matchEmployee(e.name, query)) : employees
+  // 2단계 네비는 엔터 + 부서 2개 이상일 때만. 그 외(비엔터·부서 0~1개)는 기존 단일 리스트.
+  const useDeptNav = planHasDepartments(plan) && departments.length >= 2
+  const unassignedCount = employees.filter(e => e.department_id == null).length
+
+  // 1단계: 부서 선택 화면
+  if (useDeptNav && selectedDept === null) {
+    return (
+      <div>
+        <p className="text-sm text-gray-500 mb-6 text-center">부서를 선택하세요</p>
+        <div className="grid grid-cols-2 gap-3">
+          {departments.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => setSelectedDept(d.id)}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md hover:border-green-200 transition active:scale-[0.98] text-center"
+            >
+              <div className="text-lg font-bold text-gray-800">{d.name}</div>
+              <div className="text-xs text-gray-400 mt-1">{d.employee_count}명</div>
+            </button>
+          ))}
+          {unassignedCount > 0 && (
+            <button
+              onClick={() => setSelectedDept('unassigned')}
+              className="bg-white rounded-2xl shadow-sm border border-dashed border-gray-200 p-5 hover:shadow-md hover:border-gray-300 transition active:scale-[0.98] text-center"
+            >
+              <div className="text-lg font-bold text-gray-500">미배속</div>
+              <div className="text-xs text-gray-400 mt-1">{unassignedCount}명</div>
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 2단계(또는 단일 모드): 직원 선택. base = 표시 대상 직원 집합.
+  const base = !useDeptNav
+    ? employees
+    : selectedDept === 'unassigned'
+      ? employees.filter(e => e.department_id == null)
+      : employees.filter(e => e.department_id === selectedDept)
+  const deptName = !useDeptNav ? '' : selectedDept === 'unassigned' ? '미배속' : (departments.find(d => d.id === selectedDept)?.name ?? '')
+  const showSearch = base.length >= SEARCH_THRESHOLD
+  const visible = showSearch ? base.filter(e => matchEmployee(e.name, query)) : base
 
   return (
     <div>
+      {useDeptNav && (
+        <button
+          onClick={() => { setSelectedDept(null); setQuery('') }}
+          className="mb-4 text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+        >
+          ← 부서 선택{deptName ? ` · ${deptName}` : ''}
+        </button>
+      )}
       <p className="text-sm text-gray-500 mb-6 text-center">본인 이름을 선택하세요</p>
 
       {showSearch && (
@@ -110,10 +167,10 @@ function KioskList({ slug, navigate }: { slug: string; navigate: (to: string) =>
         </div>
       )}
 
-      {employees.length === 0 ? (
+      {base.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <div className="text-5xl mb-4">👤</div>
-          <p className="text-sm">등록된 직원이 없습니다</p>
+          <p className="text-sm">{useDeptNav ? '이 부서에 직원이 없습니다' : '등록된 직원이 없습니다'}</p>
           <p className="text-xs mt-2 text-gray-300">관리자에게 문의하세요</p>
         </div>
       ) : visible.length === 0 ? (

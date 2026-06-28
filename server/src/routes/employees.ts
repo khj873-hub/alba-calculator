@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { db, generateAccessToken } from '../db'
 import { requireManagerAuth } from '../middleware/auth'
-import { activeLimit, getPlan } from '../plans'
+import { activeLimit, getPlan, planAllows } from '../plans'
 
 function getBizId(slug: string): number | null {
   const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(slug) as any
@@ -109,6 +109,31 @@ export default async function employeesRoutes(app: FastifyInstance) {
       const token = generateAccessToken()
       db.prepare('UPDATE employees SET access_token = ? WHERE id = ?').run(token, id)
       return { ok: true, access_token: token }
+    }
+  )
+
+  // 직원 부서 배정(개별) — 엔터프라이즈 전용. department_id=null 이면 미배속 해제.
+  // 게이트 + 직원·부서 양쪽 business_id 스코프 검증(타 사업장 부서로 배정 차단).
+  app.patch<{ Params: { slug: string; id: string }; Body: { department_id: number | null } }>(
+    '/api/:slug/employees/:id/department', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const biz = getBiz(req.params.slug)
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      if (!planAllows(biz.plan, 'departments')) {
+        return reply.code(403).send({
+          error: '부서 기능은 엔터프라이즈 플랜에서 사용할 수 있습니다.',
+          code: 'PLAN_FEATURE', feature: 'departments', plan: biz.plan,
+        })
+      }
+      const id = Number(req.params.id)
+      const exists = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, biz.id)
+      if (!exists) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
+      const deptId = req.body?.department_id ?? null
+      if (deptId !== null) {
+        const dept = db.prepare('SELECT id FROM departments WHERE id = ? AND business_id = ?').get(deptId, biz.id)
+        if (!dept) return reply.code(400).send({ error: '유효하지 않은 부서입니다' })
+      }
+      db.prepare('UPDATE employees SET department_id = ? WHERE id = ?').run(deptId, id)
+      return db.prepare('SELECT * FROM employees WHERE id = ?').get(id)
     }
   )
 

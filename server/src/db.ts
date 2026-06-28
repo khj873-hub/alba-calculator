@@ -190,6 +190,25 @@ const migrate = db.transaction(() => {
       `)
     }
   }
+
+  // 부서(department) 그룹 — 엔터프라이즈 전용 유료 기능. 순수 그룹핑/필터라 출퇴근·급여 계산과 무관.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS departments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_dept_business ON departments(business_id, sort_order);
+  `)
+  // employees.department_id (nullable, NULL=미배속). FK는 SQLite ALTER로 강제 불가 → 앱 레이어에서 스코프 검증.
+  // 부서 삭제 시 SET NULL은 departments DELETE 핸들러에서 트랜잭션으로 직접 수행.
+  const empColsDept = db.prepare('PRAGMA table_info(employees)').all() as any[]
+  if (empColsDept.length > 0 && !empColsDept.find((c: any) => c.name === 'department_id')) {
+    db.exec('ALTER TABLE employees ADD COLUMN department_id INTEGER')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_emp_department ON employees(department_id)')
+  }
 })
 migrate()
 
@@ -206,6 +225,7 @@ db.exec(`
     pay_includes_holiday INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'active',
     resigned_at TEXT,
+    department_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   );
 
@@ -221,6 +241,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_att_employee ON attendance(employee_id);
   CREATE INDEX IF NOT EXISTS idx_att_clock_in ON attendance(clock_in);
   CREATE INDEX IF NOT EXISTS idx_emp_business ON employees(business_id);
+  CREATE INDEX IF NOT EXISTS idx_emp_department ON employees(department_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_token ON employees(access_token);
 
   CREATE TABLE IF NOT EXISTS time_off (
