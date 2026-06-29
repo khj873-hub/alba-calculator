@@ -12,6 +12,7 @@ import oauthRoutes from './routes/oauth'
 import adminRoutes from './routes/admin'
 import inquiriesRoutes from './routes/inquiries'
 import departmentsRoutes from './routes/departments'
+import attendanceReportRoutes from './routes/attendanceReport'
 import authRoutes from './routes/auth'
 import { db } from './db'
 import { startBackup } from './backup'
@@ -86,6 +87,7 @@ app.register(oauthRoutes)
 app.register(adminRoutes)
 app.register(inquiriesRoutes)
 app.register(departmentsRoutes)
+app.register(attendanceReportRoutes)
 app.register(authRoutes)
 
 app.get('/api/health', async () => ({ ok: true }))

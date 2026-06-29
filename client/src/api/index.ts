@@ -32,13 +32,13 @@ export class PlanLimitError extends Error {
 }
 
 // 클라이언트 플랜 표시 정보 (서버 plans.ts 와 동일하게 유지)
-export interface PlanDisplay { label: string; maxActive: number | null; monthlyPrice: number | null; notifications: boolean; gps: boolean; payslip: boolean; departments: boolean }
+export interface PlanDisplay { label: string; maxActive: number | null; monthlyPrice: number | null; notifications: boolean; gps: boolean; payslip: boolean; departments: boolean; attendanceReport: boolean }
 export const PLANS_DISPLAY: Record<string, PlanDisplay> = {
-  free:       { label: '무료',         maxActive: 3,    monthlyPrice: 0,     notifications: false, gps: false, payslip: false, departments: false },
-  basic:      { label: '베이직',       maxActive: 5,    monthlyPrice: 9900,  notifications: true,  gps: true,  payslip: true,  departments: false },
-  pro:        { label: '프로',         maxActive: 20,   monthlyPrice: 29900, notifications: true,  gps: true,  payslip: true,  departments: false },
-  enterprise: { label: '엔터프라이즈', maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true,  departments: true },
-  paid:       { label: '유료',         maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true,  departments: true },
+  free:       { label: '무료',         maxActive: 3,    monthlyPrice: 0,     notifications: false, gps: false, payslip: false, departments: false, attendanceReport: false },
+  basic:      { label: '베이직',       maxActive: 5,    monthlyPrice: 9900,  notifications: true,  gps: true,  payslip: true,  departments: false, attendanceReport: true },
+  pro:        { label: '프로',         maxActive: 20,   monthlyPrice: 29900, notifications: true,  gps: true,  payslip: true,  departments: false, attendanceReport: true },
+  enterprise: { label: '엔터프라이즈', maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true,  departments: true,  attendanceReport: true },
+  paid:       { label: '유료',         maxActive: null, monthlyPrice: null,  notifications: true,  gps: true,  payslip: true,  departments: true,  attendanceReport: true },
 }
 // 유료 단계 목록 (업그레이드 안내용 — 무료/레거시 제외)
 export const UPGRADE_PLANS = ['basic', 'pro', 'enterprise']
@@ -61,6 +61,10 @@ export function planHasPayslip(plan?: string): boolean {
 // 부서 그룹은 엔터프라이즈 전용
 export function planHasDepartments(plan?: string): boolean {
   return planInfo(plan).departments
+}
+// 근무 스케줄·근태 리포트는 베이직 이상
+export function planHasAttendanceReport(plan?: string): boolean {
+  return planInfo(plan).attendanceReport
 }
 // 업그레이드 플랜 요약 (모달/안내용): "베이직 10명 9,900원 · 프로 30명 29,900원 · 엔터프라이즈 무제한 별도문의"
 export function upgradePlanSummary(): string {
@@ -120,8 +124,8 @@ export const updateHomeMode = (slug: string, home_mode: HomeMode) =>
   }, getStoredToken(slug))
 
 // 사업장 휴가 정책 (관리자 세션 인증)
-export const updateLeavePolicy = (slug: string, body: { leave_pay_calc_mode?: LeavePayCalcMode; weekly_holiday_includes_leave?: boolean; time_off_enabled?: boolean; weekly_holiday_threshold_hours?: number; week_start_day?: 0 | 1 }) =>
-  req<{ ok: boolean; leave_pay_calc_mode: LeavePayCalcMode; weekly_holiday_includes_leave: number; time_off_enabled: number; weekly_holiday_threshold_hours: number; week_start_day: number }>(
+export const updateLeavePolicy = (slug: string, body: { leave_pay_calc_mode?: LeavePayCalcMode; weekly_holiday_includes_leave?: boolean; time_off_enabled?: boolean; weekly_holiday_threshold_hours?: number; week_start_day?: 0 | 1; grace_minutes?: number }) =>
+  req<{ ok: boolean; leave_pay_calc_mode: LeavePayCalcMode; weekly_holiday_includes_leave: number; time_off_enabled: number; weekly_holiday_threshold_hours: number; week_start_day: number; grace_minutes: number }>(
     `/businesses/${slug}/leave-policy`,
     { method: 'PATCH', body: JSON.stringify(body) },
     getStoredToken(slug)
@@ -175,6 +179,22 @@ export const updateDepartment = (slug: string, id: number, body: { name?: string
   req<Department>(`/${slug}/departments/${id}`, { method: 'PUT', body: JSON.stringify(body) }, getStoredToken(slug))
 export const deleteDepartment = (slug: string, id: number) =>
   req<{ ok: boolean; unassigned: number }>(`/${slug}/departments/${id}`, { method: 'DELETE' }, getStoredToken(slug))
+
+// ── 근무 스케줄 + 근태 리포트 (베이직+) ─────────────────────────
+export interface ScheduleDay { weekday: number; start_time: string | null; end_time: string | null; is_off: number | boolean }
+export const fetchSchedule = (slug: string, employeeId: number) =>
+  req<ScheduleDay[]>(`/${slug}/employees/${employeeId}/schedule`, undefined, getStoredToken(slug))
+export const saveSchedule = (slug: string, employeeId: number, schedule: ScheduleDay[]) =>
+  req<ScheduleDay[]>(`/${slug}/employees/${employeeId}/schedule`, { method: 'PUT', body: JSON.stringify({ schedule }) }, getStoredToken(slug))
+
+export interface AttendanceReportRow {
+  employee_id: number; name: string
+  late: number; earlyLeave: number; absent: number; missingClockOut: number
+  dates: { late: string[]; earlyLeave: string[]; absent: string[]; missingClockOut: string[] }
+}
+export interface AttendanceReport { year: number; month: number; grace_minutes: number; employees: AttendanceReportRow[] }
+export const fetchAttendanceReport = (slug: string, year: number, month: number) =>
+  req<AttendanceReport>(`/${slug}/attendance-report?year=${year}&month=${month}`, undefined, getStoredToken(slug))
 
 export const regenerateEmployeeToken = (slug: string, id: number) =>
   req<{ ok: boolean; access_token: string }>(`/${slug}/employees/${id}/regenerate-token`, {

@@ -17,6 +17,7 @@ export interface Business {
   time_off_enabled?: number
   weekly_holiday_threshold_hours?: number
   week_start_day?: number  // 1=월요일, 0=일요일
+  grace_minutes?: number   // 지각/조퇴 허용오차(분)
   notify_phone?: string | null
   sms_notify_enabled?: number  // 1=출근 SMS 알림 ON
   plan?: string  // 'free' | 'paid' — 활성 인원 한도 결정

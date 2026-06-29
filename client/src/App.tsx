@@ -12,6 +12,7 @@ import PINPage from './pages/PINPage'
 import ManagerDashboard from './pages/manager/ManagerDashboard'
 import ManagerAttendancePage from './pages/manager/ManagerAttendancePage'
 import ManagerPayrollPage from './pages/manager/ManagerPayrollPage'
+import ManagerReportPage from './pages/manager/ManagerReportPage'
 import EmployeeFormPage from './pages/manager/EmployeeFormPage'
 import AdminPage from './pages/AdminPage'
 import LegalPage from './pages/LegalPage'
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/:slug/manager" element={<ManagerDashboard />} />
             <Route path="/:slug/manager/attendance" element={<ManagerAttendancePage />} />
             <Route path="/:slug/manager/payroll" element={<ManagerPayrollPage />} />
+            <Route path="/:slug/manager/report" element={<ManagerReportPage />} />
             <Route path="/:slug/manager/employees/new" element={<EmployeeFormPage />} />
             <Route path="/:slug/manager/employees/:id/edit" element={<EmployeeFormPage />} />
           </Route>

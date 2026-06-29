@@ -12,6 +12,7 @@ export default function ManagerLayout() {
   const nav = [
     { to: `/${slug}/manager`, label: '직원', icon: '👥', end: true },
     { to: `/${slug}/manager/attendance`, label: '근태', icon: '📋' },
+    { to: `/${slug}/manager/report`, label: '리포트', icon: '📊' },
     { to: `/${slug}/manager/payroll`, label: '급여', icon: '💰' },
   ]
 

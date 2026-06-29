@@ -5,12 +5,18 @@ import {
   setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, planHasGps, upgradePlanSummary, PlanLimitError,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
   planHasDepartments, fetchDepartments, createDepartment, deleteDepartment, assignEmployeeDepartment,
+  planHasAttendanceReport,
 } from '../../api'
 import type { Department } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import BusinessQR from '../../components/BusinessQR'
+import ScheduleEditor from '../../components/ScheduleEditor'
 import { getCurrentPosition } from '../../utils/geo'
 import type { Employee, Business, HomeMode, LeavePayCalcMode } from '../../types'
+
+// 출퇴근 알림 설정은 운영자 페이지(AdminPage)에서만 노출. 매니저 화면에서는 비활성화(코드 보존).
+// 기능 사용을 원하면 운영자가 직접 등록. 매니저 self 설정을 되살리려면 true로 변경.
+const MANAGER_SMS_ENABLED = false
 
 function formatElapsed(clockInStr: string) {
   const diff = Math.floor((Date.now() - new Date(clockInStr).getTime()) / 1000)
@@ -29,6 +35,7 @@ export default function ManagerDashboard() {
   const [newDeptName, setNewDeptName] = useState('')
   const [deptSaving, setDeptSaving] = useState(false)
   const [showDeptForm, setShowDeptForm] = useState(false)
+  const [scheduleEmpId, setScheduleEmpId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
   const [error, setError] = useState('')
@@ -469,6 +476,25 @@ export default function ManagerDashboard() {
                 </div>
               )}
 
+              {planHasAttendanceReport(business?.plan) && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setScheduleEmpId(scheduleEmpId === emp.id ? null : emp.id)}
+                    className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                  >
+                    🗓 근무 스케줄 {scheduleEmpId === emp.id ? '▲' : '▼'}
+                  </button>
+                  {scheduleEmpId === emp.id && (
+                    <ScheduleEditor
+                      slug={slug}
+                      employeeId={emp.id}
+                      employeeName={emp.name}
+                      onClose={(saved) => { setScheduleEmpId(null); if (saved) load() }}
+                    />
+                  )}
+                </div>
+              )}
+
               <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
                 <button
                   onClick={() => handleCopyLink(emp)}
@@ -751,7 +777,8 @@ export default function ManagerDashboard() {
         )}
       </div>
 
-      {/* 출근 SMS 알림 */}
+      {/* 출퇴근 알림 — 운영자 페이지에서만 설정(매니저 UI 비활성화, 코드 보존). MANAGER_SMS_ENABLED=true로 복구 */}
+      {MANAGER_SMS_ENABLED && (
       <div className="mt-6 border-t border-gray-100 pt-6">
         <button
           onClick={() => { setShowSmsForm(v => !v); setSmsError(''); setSmsStatus('') }}
@@ -820,6 +847,7 @@ export default function ManagerDashboard() {
           </div>
         )}
       </div>
+      )}
 
       {/* 출퇴근 QR (매장 부착용) */}
       <div className="mt-6 border-t border-gray-100 pt-6">

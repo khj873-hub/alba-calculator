@@ -55,13 +55,13 @@ export default async function businessesRoutes(app: FastifyInstance) {
 
   // 전체 사업장 목록 (PIN 미포함)
   app.get('/api/businesses', async () => {
-    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled, plan FROM businesses ORDER BY created_at DESC').all()
+    return db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled, plan, grace_minutes FROM businesses ORDER BY created_at DESC').all()
   })
 
   // 사업장 존재 확인 (PIN 미포함)
   app.get<{ Params: { slug: string } }>(
     '/api/businesses/:slug', async (req, reply) => {
-      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled, plan FROM businesses WHERE slug = ?').get(req.params.slug)
+      const biz = db.prepare('SELECT id, slug, name, created_at, lat, lng, radius_meters, home_mode, leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, notify_phone, sms_notify_enabled, plan, grace_minutes FROM businesses WHERE slug = ?').get(req.params.slug)
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       return biz
     }
@@ -101,9 +101,9 @@ export default async function businessesRoutes(app: FastifyInstance) {
   )
 
   // 휴가 정책 변경 (관리자 세션 인증)
-  app.patch<{ Params: { slug: string }; Body: { leave_pay_calc_mode?: '8hours' | 'avg_workhours'; weekly_holiday_includes_leave?: boolean; time_off_enabled?: boolean; weekly_holiday_threshold_hours?: number; week_start_day?: 0 | 1 } }>(
+  app.patch<{ Params: { slug: string }; Body: { leave_pay_calc_mode?: '8hours' | 'avg_workhours'; weekly_holiday_includes_leave?: boolean; time_off_enabled?: boolean; weekly_holiday_threshold_hours?: number; week_start_day?: 0 | 1; grace_minutes?: number } }>(
     '/api/businesses/:slug/leave-policy', { preHandler: requireManagerAuth }, async (req, reply) => {
-      const { leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day } = req.body
+      const { leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, grace_minutes } = req.body
       const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
 
@@ -118,6 +118,11 @@ export default async function businessesRoutes(app: FastifyInstance) {
       if (week_start_day != null && week_start_day !== 0 && week_start_day !== 1) {
         return reply.code(400).send({ error: 'week_start_day는 0(일) 또는 1(월)이어야 합니다' })
       }
+      if (grace_minutes != null) {
+        if (!Number.isFinite(grace_minutes) || grace_minutes < 0 || grace_minutes > 120) {
+          return reply.code(400).send({ error: '허용오차(grace_minutes)는 0~120분 사이여야 합니다' })
+        }
+      }
 
       const updates: string[] = []
       const params: any[] = []
@@ -126,11 +131,12 @@ export default async function businessesRoutes(app: FastifyInstance) {
       if (time_off_enabled != null) { updates.push('time_off_enabled = ?'); params.push(time_off_enabled ? 1 : 0) }
       if (weekly_holiday_threshold_hours != null) { updates.push('weekly_holiday_threshold_hours = ?'); params.push(Math.floor(weekly_holiday_threshold_hours)) }
       if (week_start_day != null) { updates.push('week_start_day = ?'); params.push(week_start_day) }
+      if (grace_minutes != null) { updates.push('grace_minutes = ?'); params.push(Math.floor(grace_minutes)) }
       if (updates.length === 0) return reply.code(400).send({ error: '변경할 항목이 없습니다' })
 
       params.push(req.params.slug)
       db.prepare(`UPDATE businesses SET ${updates.join(', ')} WHERE slug = ?`).run(...params)
-      const updated = db.prepare('SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day FROM businesses WHERE slug = ?').get(req.params.slug)
+      const updated = db.prepare('SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day, grace_minutes FROM businesses WHERE slug = ?').get(req.params.slug)
       return { ok: true, ...updated as object }
     }
   )

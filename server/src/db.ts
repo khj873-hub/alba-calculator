@@ -209,6 +209,26 @@ const migrate = db.transaction(() => {
     db.exec('ALTER TABLE employees ADD COLUMN department_id INTEGER')
     db.exec('CREATE INDEX IF NOT EXISTS idx_emp_department ON employees(department_id)')
   }
+
+  // 근무 스케줄(요일별 예정 출퇴근) — 지각/조퇴/결근 판정의 기준. 직원당 최대 7행(UNIQUE).
+  // 판정은 조회 시 파생 계산이라 별도 상태 컬럼 없음. weekday=0(일)~6(토), JS Date.getDay() 호환.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS employee_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      weekday INTEGER NOT NULL,
+      start_time TEXT,
+      end_time TEXT,
+      is_off INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(employee_id, weekday)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sched_employee ON employee_schedules(employee_id);
+  `)
+  // 지각/조퇴 허용오차(분) — 사업장 단일 값, 지각·조퇴 공용. 기본 0(엄격).
+  const bizColsGrace = db.prepare('PRAGMA table_info(businesses)').all() as any[]
+  if (!bizColsGrace.find((c: any) => c.name === 'grace_minutes')) {
+    db.exec('ALTER TABLE businesses ADD COLUMN grace_minutes INTEGER NOT NULL DEFAULT 0')
+  }
 })
 migrate()
 
