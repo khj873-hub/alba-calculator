@@ -5,12 +5,13 @@ import {
   setBusinessLocation, getStoredToken, planActiveLimit, planHasNotifications, planHasGps, upgradePlanSummary, PlanLimitError,
   regenerateEmployeeToken, buildEmployeeLink, updateHomeMode, updateLeavePolicy, updateSmsNotify,
   planHasDepartments, fetchDepartments, createDepartment, deleteDepartment, assignEmployeeDepartment,
-  planHasAttendanceReport,
+  planHasAttendanceReport, planHasBulkImport,
 } from '../../api'
 import type { Department } from '../../api'
 import { useSlug } from '../../hooks/useSlug'
 import BusinessQR from '../../components/BusinessQR'
 import ScheduleEditor from '../../components/ScheduleEditor'
+import EmployeeCsvImport from '../../components/EmployeeCsvImport'
 import { getCurrentPosition } from '../../utils/geo'
 import type { Employee, Business, HomeMode, LeavePayCalcMode } from '../../types'
 
@@ -36,6 +37,7 @@ export default function ManagerDashboard() {
   const [deptSaving, setDeptSaving] = useState(false)
   const [showDeptForm, setShowDeptForm] = useState(false)
   const [scheduleEmpId, setScheduleEmpId] = useState<number | null>(null)
+  const [showCsvImport, setShowCsvImport] = useState(false)
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState<number | null>(null)
   const [error, setError] = useState('')
@@ -399,15 +401,37 @@ export default function ManagerDashboard() {
             {resignedEmployees.length > 0 && <span className="text-gray-300 ml-1">· 퇴사 {resignedEmployees.length}명</span>}
           </p>
         </div>
-        <button
-          onClick={() => navigate(`/${slug}/manager/employees/new`)}
-          className="bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-blue-700 transition"
-        >
-          + 직원 추가
-        </button>
+        <div className="flex items-center gap-2">
+          {planHasBulkImport(business?.plan) && (
+            <button
+              onClick={() => setShowCsvImport(true)}
+              className="text-sm font-bold text-gray-600 border border-gray-200 px-3 py-2 rounded-xl hover:bg-gray-50 transition"
+            >
+              📋 CSV
+            </button>
+          )}
+          <button
+            onClick={() => navigate(`/${slug}/manager/employees/new`)}
+            className="bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-blue-700 transition"
+          >
+            + 직원 추가
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl px-4 py-3 mb-4">{error}</div>}
+
+      {showCsvImport && (
+        <EmployeeCsvImport slug={slug} onClose={(created, unmatched) => {
+          setShowCsvImport(false)
+          if (created > 0) {
+            load()
+            setError(unmatched && unmatched.length > 0
+              ? `${created}명 등록 완료. 단, 다음 부서명을 찾지 못해 미배속 처리됐어요(먼저 부서를 만들어주세요): ${unmatched.join(', ')}`
+              : '')
+          }
+        }} />
+      )}
 
       {employees.length === 0 ? (
         <div className="text-center py-20 text-gray-400">

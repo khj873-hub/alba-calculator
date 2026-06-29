@@ -3,6 +3,9 @@ import { db, generateAccessToken } from '../db'
 import { requireManagerAuth } from '../middleware/auth'
 import { activeLimit, getPlan, planAllows } from '../plans'
 
+// CSV 일괄 등록 시 직원 프로필 색 자동 배정용 팔레트(순환)
+const COLOR_PALETTE = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#6366F1']
+
 function getBizId(slug: string): number | null {
   const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(slug) as any
   return biz?.id ?? null
@@ -77,6 +80,68 @@ export default async function employeesRoutes(app: FastifyInstance) {
         'INSERT INTO employees (business_id, name, hourly_rate, color, access_token, pay_enabled, pay_includes_holiday) VALUES (?, ?, ?, ?, ?, ?, ?)'
       ).run(bizId, name.trim(), hourly_rate || 10320, color || '#3B82F6', token, pay_enabled === false ? 0 : 1, pay_includes_holiday === true ? 1 : 0)
       return db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid)
+    }
+  )
+
+  // CSV 일괄 등록 — 엔터프라이즈 전용. 클라가 파싱한 행 배열을 받아 서버가 전 필드 재검증 후 트랜잭션 일괄 INSERT.
+  app.post<{ Params: { slug: string }; Body: { employees: { name: string; hourly_rate?: number | string; department?: string; pay_includes_holiday?: boolean; pay_enabled?: boolean }[] } }>(
+    '/api/:slug/employees/bulk', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const biz = getBiz(req.params.slug)
+      if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
+      if (!planAllows(biz.plan, 'bulkImport')) {
+        return reply.code(403).send({ error: '직원 CSV 일괄 등록은 엔터프라이즈 플랜에서 사용할 수 있습니다.', code: 'PLAN_FEATURE', feature: 'bulkImport', plan: biz.plan })
+      }
+      const rows = req.body?.employees
+      if (!Array.isArray(rows) || rows.length === 0) return reply.code(400).send({ error: '등록할 직원이 없습니다' })
+      if (rows.length > 300) return reply.code(400).send({ error: '한 번에 최대 300명까지 등록할 수 있습니다' })
+
+      // 전 행 서버 재검증 (클라 파싱 결과를 신뢰하지 않음)
+      const errors: { row: number; reason: string }[] = []
+      const clean = rows.map((r, i) => {
+        const name = (r?.name ?? '').toString().trim()
+        if (!name) errors.push({ row: i + 1, reason: '이름 누락' })
+        let rate = 10320
+        const raw = r?.hourly_rate
+        if (raw !== undefined && raw !== null && String(raw).trim() !== '') {
+          const n = Number(raw)
+          if (!Number.isFinite(n) || n < 0) errors.push({ row: i + 1, reason: '시급이 올바르지 않음' })
+          else rate = Math.floor(n)
+        }
+        return {
+          name, rate,
+          department: (r?.department ?? '').toString().trim(),
+          pay_enabled: r?.pay_enabled === false ? 0 : 1,
+          pay_includes_holiday: r?.pay_includes_holiday === true ? 1 : 0,
+        }
+      })
+      if (errors.length) return reply.code(400).send({ error: 'CSV에 오류가 있습니다', code: 'CSV_INVALID', errors })
+
+      // 활성 인원 한도 합산 검사 (현재 활성 + 등록할 행 수)
+      const limit = activeLimit(biz.plan)
+      const active = countActive(biz.id)
+      if (limit !== null && active + clean.length > limit) {
+        return reply.code(403).send({ error: `활성 인원 한도를 초과합니다. 현재 ${active}명 / 한도 ${limit}명`, code: 'PLAN_LIMIT', plan: biz.plan, limit, active, allowed: Math.max(0, limit - active) })
+      }
+
+      // 부서명 → id 매칭(같은 사업장). 없는 부서명은 미배속 + 경고.
+      const depts = db.prepare('SELECT id, name FROM departments WHERE business_id = ?').all(biz.id) as any[]
+      const deptMap = new Map<string, number>(depts.map((d) => [d.name, d.id]))
+      const unmatched = new Set<string>()
+
+      const ins = db.prepare('INSERT INTO employees (business_id, name, hourly_rate, color, access_token, pay_enabled, pay_includes_holiday, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      const tx = db.transaction(() => {
+        clean.forEach((c, i) => {
+          let deptId: number | null = null
+          if (c.department) {
+            if (deptMap.has(c.department)) deptId = deptMap.get(c.department)!
+            else unmatched.add(c.department)
+          }
+          const color = COLOR_PALETTE[(active + i) % COLOR_PALETTE.length]
+          ins.run(biz.id, c.name, c.rate, color, generateAccessToken(), c.pay_enabled, c.pay_includes_holiday, deptId)
+        })
+      })
+      tx()
+      return { ok: true, created: clean.length, unmatchedDepartments: [...unmatched] }
     }
   )
 
