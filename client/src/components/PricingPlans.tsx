@@ -4,11 +4,11 @@ const PLANS = [
   { name: '무료', price: '0원', cap: '활성 직원 3명', highlight: false, inquiryType: '',
     feats: ['출퇴근 기록', '급여·주휴수당 자동 계산'], note: '구글 로그인으로 바로 시작', cta: '무료로 시작하기' },
   { name: '베이직', price: '월 9,900원', cap: '활성 직원 5명', highlight: true, inquiryType: '베이직 (직원 5명·월 9,900원)',
-    feats: ['무료 기능 전체', '출퇴근 SMS·카카오 알림', 'GPS 위치 제한', '급여명세서 PDF·CSV 출력'], note: '가장 인기', cta: '베이직 문의하기' },
+    feats: ['무료 기능 전체', '출퇴근 SMS·카카오 알림', 'GPS 위치 제한', '급여명세서 PDF·CSV 출력', '근무 스케줄·지각/조퇴 리포트'], note: '가장 인기', cta: '베이직 문의하기' },
   { name: '프로', price: '월 29,900원', cap: '활성 직원 20명', highlight: false, inquiryType: '프로 (직원 20명·월 29,900원)',
     feats: ['베이직 기능 전체', '직원 20명까지'], note: '규모 있는 매장', cta: '프로 문의하기' },
   { name: '엔터프라이즈', price: '별도 문의', cap: '직원 무제한', highlight: false, inquiryType: '엔터프라이즈 (무제한)',
-    feats: ['프로 기능 전체', '직원 수 제한 없음'], note: '다점포·대형 사업장', cta: '엔터프라이즈 문의하기' },
+    feats: ['프로 기능 전체', '직원 수 제한 없음', '부서별 그룹 관리(키오스크 조직 분리)', '직원 CSV 일괄 등록'], note: '직원 20명 초과·다점포', cta: '엔터프라이즈 문의하기' },
 ]
 
 // onFree 미전달 시 무료 카드 버튼을 숨긴다(예: 이미 가입 화면인 /create).
