@@ -162,7 +162,9 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       }
 
       const gate = await attendanceGate(req.params.slug, empId)
-      if (!gate.ok) {
+      // TS 버전에 따라 `!gate.ok` 로는 유니온이 좁혀지지 않아 gate.limit 접근이 실패한다.
+      // 판별 속성을 리터럴과 직접 비교해 어느 환경에서나 좁혀지게 한다.
+      if (gate.ok === false) {
         // error=친절 메시지(클라 표시용), code=머신 코드 — 기존 PLAN_LIMIT 컨벤션 동일
         return reply.code(403).send({
           error: attendanceLimitMessage(gate.limit),
