@@ -91,7 +91,9 @@ app.register(authRoutes)
 
 app.get('/api/health', async () => ({ ok: true }))
 
-if (isProd) {
+// Vercel 에서는 정적 파일을 Vercel 이 직접 서빙하므로(vercel.json) Fastify 는 /api 만 담당한다.
+// 그 외 환경(로컬 prod 실행·Railway 등)에서는 기존처럼 client/dist 를 서빙한다.
+if (isProd && !process.env.VERCEL) {
   const clientDist = path.resolve(__dirname, '../../client/dist')
   app.register(staticFiles, { root: clientDist, prefix: '/' })
   app.setNotFoundHandler((_req, reply) => reply.sendFile('index.html', clientDist))
@@ -112,8 +114,11 @@ async function downgradeExpiredPlans() {
   }
 }
 
+export { app, ensureSeed, downgradeExpiredPlans }
+
+// 서버리스(Vercel)에서는 listen 하지 않는다. api/index.ts 가 app 을 핸들러로 쓴다.
 const PORT = Number(process.env.PORT) || 3002
-app.listen({ port: PORT, host: '0.0.0.0' }, async (err) => {
+if (!process.env.VERCEL) app.listen({ port: PORT, host: '0.0.0.0' }, async (err) => {
   if (err) { console.error(err); process.exit(1) }
   console.log(`Alba server running on http://localhost:${PORT}`)
   try {
