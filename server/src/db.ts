@@ -1,17 +1,156 @@
-import Database from 'better-sqlite3'
-import path from 'path'
-import fs from 'fs'
+import postgres from 'postgres'
+import { AsyncLocalStorage } from 'async_hooks'
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto'
 
-const DATA_DIR = path.resolve(__dirname, '../../data')
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
+/**
+ * Postgres(Supabase) 데이터 레이어.
+ *
+ * 기존 better-sqlite3 의 `db.prepare(sql).get/all/run(...)` 시그니처를 그대로 유지하되
+ * Promise 를 돌려준다. 호출부는 `await` 만 붙이면 되고 SQL 문은 거의 그대로 쓴다.
+ *
+ * 자동 처리:
+ *  - `?` 플레이스홀더 → `$1, $2 …`
+ *  - `.run()` 의 INSERT 는 `RETURNING id` 를 붙여 lastInsertRowid 를 채운다
+ *  - int8(COUNT 등)은 number 로 파싱 (pg 기본은 string)
+ *
+ * 스키마(DDL)는 Supabase 마이그레이션에서 관리한다. 여기서 CREATE TABLE 을 하지 않는다.
+ */
 
-const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'alba.db')
-export const db = new Database(DB_PATH)
+const URL = process.env.DATABASE_URL
+if (!URL) throw new Error('DATABASE_URL 미설정: Supabase 연결 문자열이 필요합니다.')
 
-db.pragma('journal_mode = WAL')
-db.pragma('synchronous = NORMAL')
-db.pragma('foreign_keys = ON')
+// 서버리스에서는 Supabase Transaction Pooler(6543) + prepare:false 를 쓴다.
+export const sql = postgres(URL, {
+  prepare: false,
+  max: Number(process.env.PG_POOL_MAX ?? 1),
+  idle_timeout: 20,
+  connect_timeout: 10,
+  // int8(bigint) 을 JS number 로 받는다. 기본값은 string 이고 postgres.BigInt 는
+  // JSON 직렬화가 안 되므로(JSON.stringify 가 BigInt 에서 예외) 둘 다 쓰지 않는다.
+  // id·COUNT 모두 Number.MAX_SAFE_INTEGER 안이라 안전하다.
+  types: {
+    bigint: {
+      to: 20,
+      from: [20],
+      serialize: (x: number | bigint) => x.toString(),
+      parse: (x: string) => Number(x),
+    },
+  },
+  transform: { undefined: null },
+})
+
+/** `?` → `$1, $2 …` (문자열 리터럴 안의 ? 는 건드리지 않는다) */
+function toPgPlaceholders(text: string): string {
+  let out = ''
+  let i = 0
+  let n = 0
+  let quote: string | null = null
+  while (i < text.length) {
+    const ch = text[i]
+    if (quote) {
+      out += ch
+      if (ch === quote) quote = null
+      i++
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch
+      out += ch
+      i++
+      continue
+    }
+    if (ch === '?') {
+      out += '$' + ++n
+      i++
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
+}
+
+type Row = Record<string, any>
+
+/**
+ * 진행 중인 트랜잭션 연결을 비동기 컨텍스트로 전파한다.
+ * 이게 없으면 db.transaction() 안의 db.prepare() 가 풀에서 **다른** 연결을 집어
+ *  (1) 트랜잭션 밖에서 실행되어 롤백이 안 되고
+ *  (2) 풀이 가득 차면(max:1) 서로를 기다리며 데드락이 난다.
+ */
+const txStore = new AsyncLocalStorage<Conn>()
+const conn = (): Conn => txStore.getStore() ?? sql
+
+class Statement {
+  private readonly text: string
+  constructor(private readonly raw: string) {
+    this.text = toPgPlaceholders(raw)
+  }
+
+  private exec(args: any[]) {
+    // 호출부가 .get(a, b) 또는 .get([a, b]) 둘 다 쓰므로 평탄화한다.
+    const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+    return conn().unsafe(this.text, params as any[])
+  }
+
+  async get(...args: any[]): Promise<Row | undefined> {
+    const rows = await this.exec(args)
+    return rows[0] as Row | undefined
+  }
+
+  async all(...args: any[]): Promise<Row[]> {
+    return (await this.exec(args)) as unknown as Row[]
+  }
+
+  /** better-sqlite3 호환: { changes, lastInsertRowid } */
+  async run(...args: any[]): Promise<{ changes: number; lastInsertRowid: number | null }> {
+    const isInsert = /^\s*insert\s/i.test(this.text)
+    const wantsReturn = isInsert && !/returning/i.test(this.text)
+    const text = wantsReturn ? this.text.replace(/;?\s*$/, ' RETURNING id') : this.text
+    const params = args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+    let rows: any
+    try {
+      rows = await conn().unsafe(text, params as any[])
+    } catch (e: any) {
+      // id 컬럼이 없는 테이블(sessions 등)의 INSERT 는 RETURNING 없이 재시도
+      if (wantsReturn && /column "id" does not exist/i.test(e?.message ?? '')) {
+        rows = await conn().unsafe(this.text, params as any[])
+      } else throw e
+    }
+    return {
+      changes: rows.count ?? rows.length ?? 0,
+      lastInsertRowid: rows?.[0]?.id ?? null,
+    }
+  }
+}
+
+type Conn = typeof sql
+
+export const db = {
+  prepare(text: string) {
+    return new Statement(text)
+  },
+  /** DDL·여러 문장 실행 */
+  async exec(text: string) {
+    await conn().unsafe(text)
+  },
+  /**
+   * better-sqlite3 의 db.transaction(fn) 대체.
+   * 반환된 함수를 호출하면 트랜잭션 안에서 fn 이 실행된다. fn 은 async 여야 한다.
+   */
+  transaction<T>(fn: () => Promise<T>) {
+    return async (): Promise<T> => {
+      let result!: T
+      await sql.begin(async (tx) => {
+        // fn 안의 db.prepare() 가 이 트랜잭션 연결을 쓰도록 컨텍스트에 심는다.
+        await txStore.run(tx as unknown as Conn, async () => {
+          result = await fn()
+        })
+      })
+      return result
+    }
+  },
+}
 
 // PIN 해시 유틸
 export function hashPin(pin: string): string {
@@ -30,294 +169,17 @@ export function verifyPinHash(pin: string, stored: string): boolean {
   }
 }
 
-// 관리자 세션 토큰 테이블
-db.exec(`
-  CREATE TABLE IF NOT EXISTS sessions (
-    token TEXT PRIMARY KEY,
-    slug TEXT NOT NULL,
-    expires_at TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL CHECK(provider IN ('google','kakao')),
-    provider_id TEXT NOT NULL,
-    email TEXT NOT NULL,
-    name TEXT,
-    picture_url TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    last_login_at TEXT,
-    UNIQUE(provider, provider_id)
-  );
-  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-`)
-
-// businesses 테이블 생성
-db.exec(`
-  CREATE TABLE IF NOT EXISTS businesses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    slug TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL DEFAULT '내 사업장',
-    manager_pin TEXT NOT NULL DEFAULT '1234',
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-  );
-`)
-
-// employees 테이블 마이그레이션 (트랜잭션으로 원자적 실행)
-const migrate = db.transaction(() => {
-  const empCols = (db.prepare('PRAGMA table_info(employees)').all() as any[])
-  if (empCols.length > 0 && !empCols.find((c: any) => c.name === 'business_id')) {
-    const defaultPin = hashPin(process.env.MANAGER_PIN || '1234')
-    db.prepare("INSERT OR IGNORE INTO businesses (slug, name, manager_pin) VALUES ('default', '기본 사업장', ?)").run(defaultPin)
-    const biz = db.prepare("SELECT id FROM businesses WHERE slug = 'default'").get() as any
-    db.exec(`ALTER TABLE employees ADD COLUMN business_id INTEGER DEFAULT ${biz.id}`)
-  }
-  // 위치 컬럼 추가 (신규)
-  const bizCols = db.prepare('PRAGMA table_info(businesses)').all() as any[]
-  if (!bizCols.find((c: any) => c.name === 'lat')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN lat REAL')
-    db.exec('ALTER TABLE businesses ADD COLUMN lng REAL')
-    db.exec('ALTER TABLE businesses ADD COLUMN radius_meters INTEGER DEFAULT 300')
-  }
-  // 평문 PIN이 남아 있는 사업장 재해싱 (초기 마이그레이션 시 해싱 누락된 경우)
-  const bizs = db.prepare('SELECT slug, manager_pin FROM businesses').all() as any[]
-  for (const b of bizs) {
-    if (!b.manager_pin.includes(':')) {
-      db.prepare('UPDATE businesses SET manager_pin = ? WHERE slug = ?').run(hashPin(b.manager_pin), b.slug)
-    }
-  }
-  // v2 마이그레이션: 직원 접근 토큰 + 급여 적용 ON/OFF + 홈 화면 모드
-  const empColsAfter = db.prepare('PRAGMA table_info(employees)').all() as any[]
-  if (empColsAfter.length > 0 && !empColsAfter.find((c: any) => c.name === 'access_token')) {
-    db.exec('ALTER TABLE employees ADD COLUMN access_token TEXT')
-    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_token ON employees(access_token)')
-    const existing = db.prepare('SELECT id FROM employees WHERE access_token IS NULL').all() as any[]
-    const upd = db.prepare('UPDATE employees SET access_token = ? WHERE id = ?')
-    for (const row of existing) upd.run(randomBytes(16).toString('hex'), row.id)
-  }
-  if (empColsAfter.length > 0 && !empColsAfter.find((c: any) => c.name === 'pay_enabled')) {
-    db.exec('ALTER TABLE employees ADD COLUMN pay_enabled INTEGER NOT NULL DEFAULT 1')
-  }
-  // 주휴수당 포함 시급 모드 — 시급에 주휴분이 녹아있는 포괄임금형 직원
-  // 0=별도 지급(기본, 자동 산정) / 1=포함(시급 그대로, weekly_holiday_pay=0)
-  const empColsV4 = db.prepare('PRAGMA table_info(employees)').all() as any[]
-  if (empColsV4.length > 0 && !empColsV4.find((c: any) => c.name === 'pay_includes_holiday')) {
-    db.exec('ALTER TABLE employees ADD COLUMN pay_includes_holiday INTEGER NOT NULL DEFAULT 0')
-  }
-
-  // 직원 재직/퇴사 상태 — 요금제 활성 인원 카운트의 토대.
-  // 퇴사는 soft 처리(레코드 보존: 임금대장·근태 조회 가능, 활성 카운트에서만 제외).
-  const empColsV5 = db.prepare('PRAGMA table_info(employees)').all() as any[]
-  if (empColsV5.length > 0 && !empColsV5.find((c: any) => c.name === 'status')) {
-    db.exec("ALTER TABLE employees ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
-    db.exec('ALTER TABLE employees ADD COLUMN resigned_at TEXT')
-  }
-
-  const bizColsAfter = db.prepare('PRAGMA table_info(businesses)').all() as any[]
-  if (!bizColsAfter.find((c: any) => c.name === 'home_mode')) {
-    db.exec("ALTER TABLE businesses ADD COLUMN home_mode TEXT NOT NULL DEFAULT 'kiosk'")
-  }
-  // v3 마이그레이션: 휴가(연차/무급/병가/경조사) 기능
-  const bizColsV3 = db.prepare('PRAGMA table_info(businesses)').all() as any[]
-  if (!bizColsV3.find((c: any) => c.name === 'leave_pay_calc_mode')) {
-    db.exec("ALTER TABLE businesses ADD COLUMN leave_pay_calc_mode TEXT NOT NULL DEFAULT '8hours'")
-  }
-  if (!bizColsV3.find((c: any) => c.name === 'weekly_holiday_includes_leave')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN weekly_holiday_includes_leave INTEGER NOT NULL DEFAULT 1')
-  }
-  if (!bizColsV3.find((c: any) => c.name === 'time_off_enabled')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN time_off_enabled INTEGER NOT NULL DEFAULT 0')
-  }
-  if (!bizColsV3.find((c: any) => c.name === 'owner_user_id')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN owner_user_id INTEGER REFERENCES users(id)')
-  }
-  if (!bizColsV3.find((c: any) => c.name === 'is_active')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1')
-  }
-  if (!bizColsV3.find((c: any) => c.name === 'suspended_at')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN suspended_at TEXT')
-  }
-  // 요금제: free/basic/pro/enterprise (+레거시 paid). 정의·한도는 plans.ts.
-  // plan_expires_at 만료 시 index.ts가 무료(free)로 자동 다운그레이드.
-  // CHECK 제약은 ALTER TABLE에서 일부 환경 호환성 이슈 → 앱 레이어에서 검증
-  if (!bizColsV3.find((c: any) => c.name === 'plan')) {
-    db.exec("ALTER TABLE businesses ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
-  }
-  // 유료 결제 만료일: 'YYYY-MM-DD' KST. NULL이면 무기한.
-  // 만료 도달 시 미들웨어가 is_active=0으로 자동 정지
-  if (!bizColsV3.find((c: any) => c.name === 'plan_expires_at')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN plan_expires_at TEXT')
-  }
-  // 주휴수당 정책 — 사업장별 커스터마이즈
-  // weekly_holiday_threshold_hours: 주휴수당 지급 기준 시간 (법정 15시간, 사업장이 더 엄격하게 가능)
-  // week_start_day: 주차 시작 요일 (1=월, 0=일)
-  if (!bizColsV3.find((c: any) => c.name === 'weekly_holiday_threshold_hours')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN weekly_holiday_threshold_hours INTEGER NOT NULL DEFAULT 15')
-  }
-  if (!bizColsV3.find((c: any) => c.name === 'week_start_day')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN week_start_day INTEGER NOT NULL DEFAULT 1')
-  }
-  // 출근 SMS 알림 — 사업주 수신번호 + 기능 ON/OFF (기본 OFF, 사업장별 opt-in)
-  if (!bizColsV3.find((c: any) => c.name === 'notify_phone')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN notify_phone TEXT')
-  }
-  if (!bizColsV3.find((c: any) => c.name === 'sms_notify_enabled')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN sms_notify_enabled INTEGER NOT NULL DEFAULT 0')
-  }
-  // time_off 테이블이 구 스키마(half_period NULL 허용)면 신 스키마로 재생성
-  const toExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='time_off'").get() as any
-  if (toExists) {
-    const toCols = db.prepare('PRAGMA table_info(time_off)').all() as any[]
-    const hpCol = toCols.find((c: any) => c.name === 'half_period')
-    if (hpCol && hpCol.notnull === 0) {
-      db.exec(`
-        CREATE TABLE time_off_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-          date TEXT NOT NULL,
-          type TEXT NOT NULL CHECK(type IN ('annual','unpaid','sick','family')),
-          portion REAL NOT NULL DEFAULT 1.0 CHECK(portion IN (0.5, 1.0)),
-          half_period TEXT NOT NULL DEFAULT 'full' CHECK(half_period IN ('am','pm','full')),
-          memo TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-          UNIQUE(employee_id, date, half_period)
-        );
-        INSERT INTO time_off_new (id, employee_id, date, type, portion, half_period, memo, created_at)
-          SELECT id, employee_id, date, type, portion, COALESCE(half_period, 'full'), memo, created_at FROM time_off;
-        DROP TABLE time_off;
-        ALTER TABLE time_off_new RENAME TO time_off;
-        CREATE INDEX IF NOT EXISTS idx_timeoff_emp_date ON time_off(employee_id, date);
-      `)
-    }
-  }
-
-  // 부서(department) 그룹 — 엔터프라이즈 전용 유료 기능. 순수 그룹핑/필터라 출퇴근·급여 계산과 무관.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS departments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_dept_business ON departments(business_id, sort_order);
-  `)
-  // employees.department_id (nullable, NULL=미배속). FK는 SQLite ALTER로 강제 불가 → 앱 레이어에서 스코프 검증.
-  // 부서 삭제 시 SET NULL은 departments DELETE 핸들러에서 트랜잭션으로 직접 수행.
-  const empColsDept = db.prepare('PRAGMA table_info(employees)').all() as any[]
-  if (empColsDept.length > 0 && !empColsDept.find((c: any) => c.name === 'department_id')) {
-    db.exec('ALTER TABLE employees ADD COLUMN department_id INTEGER')
-    db.exec('CREATE INDEX IF NOT EXISTS idx_emp_department ON employees(department_id)')
-  }
-
-  // 근무 스케줄(요일별 예정 출퇴근) — 지각/조퇴/결근 판정의 기준. 직원당 최대 7행(UNIQUE).
-  // 판정은 조회 시 파생 계산이라 별도 상태 컬럼 없음. weekday=0(일)~6(토), JS Date.getDay() 호환.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS employee_schedules (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-      weekday INTEGER NOT NULL,
-      start_time TEXT,
-      end_time TEXT,
-      is_off INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(employee_id, weekday)
-    );
-    CREATE INDEX IF NOT EXISTS idx_sched_employee ON employee_schedules(employee_id);
-  `)
-  // 지각/조퇴 허용오차(분) — 사업장 단일 값, 지각·조퇴 공용. 기본 0(엄격).
-  const bizColsGrace = db.prepare('PRAGMA table_info(businesses)').all() as any[]
-  if (!bizColsGrace.find((c: any) => c.name === 'grace_minutes')) {
-    db.exec('ALTER TABLE businesses ADD COLUMN grace_minutes INTEGER NOT NULL DEFAULT 0')
-  }
-})
-migrate()
-
-// 나머지 테이블 생성 (신규 설치 시)
-db.exec(`
-  CREATE TABLE IF NOT EXISTS employees (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    hourly_rate INTEGER NOT NULL DEFAULT 10320,
-    color TEXT NOT NULL DEFAULT '#3B82F6',
-    access_token TEXT,
-    pay_enabled INTEGER NOT NULL DEFAULT 1,
-    pay_includes_holiday INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'active',
-    resigned_at TEXT,
-    department_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS attendance (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    clock_in TEXT NOT NULL,
-    clock_out TEXT,
-    memo TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_att_employee ON attendance(employee_id);
-  CREATE INDEX IF NOT EXISTS idx_att_clock_in ON attendance(clock_in);
-  CREATE INDEX IF NOT EXISTS idx_emp_business ON employees(business_id);
-  CREATE INDEX IF NOT EXISTS idx_emp_department ON employees(department_id);
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_token ON employees(access_token);
-
-  CREATE TABLE IF NOT EXISTS time_off (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    date TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('annual','unpaid','sick','family')),
-    portion REAL NOT NULL DEFAULT 1.0 CHECK(portion IN (0.5, 1.0)),
-    half_period TEXT NOT NULL DEFAULT 'full' CHECK(half_period IN ('am','pm','full')),
-    memo TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-    UNIQUE(employee_id, date, half_period)
-  );
-  CREATE INDEX IF NOT EXISTS idx_timeoff_emp_date ON time_off(employee_id, date);
-
-  CREATE TABLE IF NOT EXISTS inquiries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source TEXT,
-    inquiry_type TEXT,
-    business_name TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    content TEXT,
-    agreed_marketing INTEGER NOT NULL DEFAULT 0,
-    ip TEXT,
-    status TEXT NOT NULL DEFAULT 'new',
-    note TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-    handled_at TEXT
-  );
-  CREATE INDEX IF NOT EXISTS idx_inquiry_status ON inquiries(status);
-  CREATE INDEX IF NOT EXISTS idx_inquiry_created ON inquiries(created_at DESC);
-  `)
-
-  // 문의 유형(관심 플랜·단순 도입 등) — 기존 inquiries 테이블에 멱등 추가
-  const inqCols = db.prepare('PRAGMA table_info(inquiries)').all() as any[]
-  if (inqCols.length > 0 && !inqCols.find((c: any) => c.name === 'inquiry_type')) {
-    db.exec('ALTER TABLE inquiries ADD COLUMN inquiry_type TEXT')
-  }
-
-  db.exec(`
-
-  CREATE TABLE IF NOT EXISTS notification_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel TEXT NOT NULL,                 -- 'sms' | 'alimtalk'
-    to_phone TEXT NOT NULL,
-    template TEXT,                         -- 'check_in' | 'test' 등
-    message TEXT NOT NULL,
-    status TEXT NOT NULL,                  -- 'sent' | 'failed' | 'skipped'
-    provider_id TEXT,
-    error TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-  );
-  CREATE INDEX IF NOT EXISTS idx_notiflog_created ON notification_logs(created_at DESC);
-`)
-
-// 토큰 헬퍼 (employees INSERT 시 사용)
 export function generateAccessToken(): string {
-  return randomBytes(16).toString('hex')
+  return randomBytes(24).toString('hex')
+}
+
+/** 기본 사업장 시드 (최초 1회). 스키마는 Supabase 마이그레이션이 담당한다. */
+export async function ensureSeed(): Promise<void> {
+  const defaultPin = hashPin(process.env.DEFAULT_MANAGER_PIN || '1234')
+  await db
+    .prepare(
+      `INSERT INTO businesses (slug, name, manager_pin) VALUES ('default', '기본 사업장', ?)
+       ON CONFLICT (slug) DO NOTHING`,
+    )
+    .run(defaultPin)
 }

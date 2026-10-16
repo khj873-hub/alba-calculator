@@ -30,13 +30,13 @@ export default async function authRoutes(app: FastifyInstance) {
       }
     },
     async (req, reply) => {
-      const biz = db.prepare('SELECT manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       if (!verifyPinHash(req.body.pin, biz.manager_pin)) return reply.code(401).send({ error: 'PIN이 올바르지 않습니다' })
       // 만료 세션 정리 후 새 토큰 발급
-      db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
+      await db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
       const token = randomBytes(32).toString('hex')
-      db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)').run(token, req.params.slug, expiresKST(24))
+      await db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)').run(token, req.params.slug, expiresKST(24))
       return { ok: true, token }
     }
   )

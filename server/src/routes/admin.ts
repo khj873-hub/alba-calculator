@@ -3,12 +3,12 @@ import { db, hashPin } from '../db'
 import { requireAdminAuth } from '../middleware/auth'
 import { planAllows, ASSIGNABLE_PLANS } from '../plans'
 
-function generateSlug(): string {
+async function generateSlug(): Promise<string> {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   for (let attempt = 0; attempt < 10; attempt++) {
     let slug = ''
     for (let i = 0; i < 6; i++) slug += chars[Math.floor(Math.random() * chars.length)]
-    if (!db.prepare('SELECT id FROM businesses WHERE slug = ?').get(slug)) return slug
+    if (!await db.prepare('SELECT id FROM businesses WHERE slug = ?').get(slug)) return slug
   }
   throw new Error('슬러그 생성 실패')
 }
@@ -17,7 +17,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 1) 모든 사업장 + owner + 업체별 활동(사용량) 목록
   app.get('/api/admin/businesses', { preHandler: requireAdminAuth }, async () => {
     const cutoff7 = new Date(Date.now() + 9 * 60 * 60 * 1000 - 7 * 86400000).toISOString().replace('T', ' ').slice(0, 19)
-    return db.prepare(`
+    return await db.prepare(`
       SELECT b.id, b.slug, b.name, b.created_at, b.time_off_enabled,
              b.is_active, b.suspended_at, b.plan, b.plan_expires_at,
              b.notify_phone, b.sms_notify_enabled,
@@ -36,7 +36,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 1-2) 업체별 상세 통계 (모달용)
   app.get<{ Params: { slug: string } }>(
     '/api/admin/businesses/:slug/detail-stats', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare(
+      const biz = await db.prepare(
         'SELECT id, slug, name, plan, created_at, is_active, notify_phone, owner_user_id FROM businesses WHERE slug = ?'
       ).get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
@@ -44,33 +44,33 @@ export default async function adminRoutes(app: FastifyInstance) {
       const kst = (off = 0) => new Date(Date.now() + 9 * 60 * 60 * 1000 + off).toISOString().replace('T', ' ').slice(0, 19)
       const todayStart = kst().slice(0, 10) + ' 00:00:00'
       const c30 = kst(-30 * 86400000), c7 = kst(-7 * 86400000)
-      const one = (sql: string, ...p: any[]) => (db.prepare(sql).get(...p) as any)?.n ?? 0
+      const one = async (sql: string, ...p: any[]) => (await db.prepare(sql).get(...p) as any)?.n ?? 0
       const attBase = 'FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE e.business_id = ?'
 
       const owner = biz.owner_user_id
-        ? (db.prepare('SELECT email FROM users WHERE id = ?').get(biz.owner_user_id) as any) : null
-      const empActive = one("SELECT COUNT(*) n FROM employees WHERE business_id = ? AND status = 'active'", bizId)
-      const empTotal = one('SELECT COUNT(*) n FROM employees WHERE business_id = ?', bizId)
-      const payEmployees = one("SELECT COUNT(*) n FROM employees WHERE business_id = ? AND status = 'active' AND pay_enabled = 1", bizId)
-      const workingNow = one(`SELECT COUNT(*) n ${attBase} AND a.clock_out IS NULL`, bizId)
+        ? (await db.prepare('SELECT email FROM users WHERE id = ?').get(biz.owner_user_id) as any) : null
+      const empActive = await one("SELECT COUNT(*) n FROM employees WHERE business_id = ? AND status = 'active'", bizId)
+      const empTotal = await one('SELECT COUNT(*) n FROM employees WHERE business_id = ?', bizId)
+      const payEmployees = await one("SELECT COUNT(*) n FROM employees WHERE business_id = ? AND status = 'active' AND pay_enabled = 1", bizId)
+      const workingNow = await one(`SELECT COUNT(*) n ${attBase} AND a.clock_out IS NULL`, bizId)
 
-      const attToday = one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, todayStart)
-      const att7 = one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, c7)
-      const att30 = one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, c30)
-      const lastAt = (db.prepare(`SELECT MAX(a.clock_in) n ${attBase}`).get(bizId) as any)?.n ?? null
-      const daily30 = db.prepare(
+      const attToday = await one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, todayStart)
+      const att7 = await one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, c7)
+      const att30 = await one(`SELECT COUNT(*) n ${attBase} AND a.clock_in >= ?`, bizId, c30)
+      const lastAt = (await db.prepare(`SELECT MAX(a.clock_in) n ${attBase}`).get(bizId) as any)?.n ?? null
+      const daily30 = await db.prepare(
         `SELECT substr(a.clock_in,1,10) d, COUNT(*) n ${attBase} AND a.clock_in >= ? GROUP BY d ORDER BY d`
       ).all(bizId, c30) as any[]
 
       // SMS/알림 — notify_phone(숫자만) 매칭
       const np = (biz.notify_phone || '').replace(/[^0-9]/g, '')
-      const sent30 = np ? one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND to_phone = ? AND created_at >= ?", np, c30) : 0
-      const byTemplate = np ? db.prepare(
+      const sent30 = np ? await one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND to_phone = ? AND created_at >= ?", np, c30) : 0
+      const byTemplate = np ? await db.prepare(
         "SELECT COALESCE(template,'기타') t, COUNT(*) n FROM notification_logs WHERE status = 'sent' AND to_phone = ? AND created_at >= ? GROUP BY t ORDER BY n DESC"
       ).all(np, c30) as any[] : []
 
-      const timeoff30 = one('SELECT COUNT(*) n FROM time_off t JOIN employees e ON e.id = t.employee_id WHERE e.business_id = ? AND t.created_at >= ?', bizId, c30)
-      const timeoffTotal = one('SELECT COUNT(*) n FROM time_off t JOIN employees e ON e.id = t.employee_id WHERE e.business_id = ?', bizId)
+      const timeoff30 = await one('SELECT COUNT(*) n FROM time_off t JOIN employees e ON e.id = t.employee_id WHERE e.business_id = ? AND t.created_at >= ?', bizId, c30)
+      const timeoffTotal = await one('SELECT COUNT(*) n FROM time_off t JOIN employees e ON e.id = t.employee_id WHERE e.business_id = ?', bizId)
 
       return {
         business: { name: biz.name, slug: biz.slug, plan: biz.plan, created_at: biz.created_at, is_active: biz.is_active, owner_email: owner?.email ?? null },
@@ -85,11 +85,11 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 요금제(plan) 변경
   app.patch<{ Params: { slug: string }; Body: { plan: string } }>(
     '/api/admin/businesses/:slug/plan', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
       const plan = req.body.plan
       if (!ASSIGNABLE_PLANS.includes(plan)) return reply.code(400).send({ error: '잘못된 요금제' })
-      db.prepare('UPDATE businesses SET plan = ? WHERE slug = ?').run(plan, req.params.slug)
+      await db.prepare('UPDATE businesses SET plan = ? WHERE slug = ?').run(plan, req.params.slug)
       return { ok: true, plan }
     }
   )
@@ -98,7 +98,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 미래 날짜로 설정 시 정지된 사업장이면 자동 활성화 (결제 받음 → 즉시 재개)
   app.patch<{ Params: { slug: string }; Body: { plan_expires_at: string | null } }>(
     '/api/admin/businesses/:slug/plan-expires-at', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id, is_active FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT id, is_active FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
       const v = req.body.plan_expires_at
       if (v !== null && !/^\d{4}-\d{2}-\d{2}$/.test(v ?? '')) {
@@ -110,12 +110,12 @@ export default async function adminRoutes(app: FastifyInstance) {
       const shouldAutoActivate = v !== null && v >= todayYmd && biz.is_active === 0
 
       if (shouldAutoActivate) {
-        db.prepare('UPDATE businesses SET plan_expires_at = ?, is_active = 1, suspended_at = NULL WHERE slug = ?')
+        await db.prepare('UPDATE businesses SET plan_expires_at = ?, is_active = 1, suspended_at = NULL WHERE slug = ?')
           .run(v, req.params.slug)
         return { ok: true, plan_expires_at: v, auto_activated: true }
       }
 
-      db.prepare('UPDATE businesses SET plan_expires_at = ? WHERE slug = ?').run(v, req.params.slug)
+      await db.prepare('UPDATE businesses SET plan_expires_at = ? WHERE slug = ?').run(v, req.params.slug)
       return { ok: true, plan_expires_at: v, auto_activated: false }
     }
   )
@@ -123,13 +123,13 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 사업장 활성/정지 토글
   app.patch<{ Params: { slug: string }; Body: { is_active: boolean } }>(
     '/api/admin/businesses/:slug/status', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
-      const active = req.body.is_active ? 1 : 0
-      const suspendedAt = active === 0
+      const active = !!req.body.is_active
+      const suspendedAt = !active
         ? new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
         : null
-      db.prepare('UPDATE businesses SET is_active = ?, suspended_at = ? WHERE slug = ?')
+      await db.prepare('UPDATE businesses SET is_active = ?, suspended_at = ? WHERE slug = ?')
         .run(active, suspendedAt, req.params.slug)
       return { ok: true, is_active: active, suspended_at: suspendedAt }
     }
@@ -139,7 +139,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   // new_pin 미입력 시 6자리 자동 생성. 응답에 평문 PIN 반환(운영자가 사장님께 전달).
   app.patch<{ Params: { slug: string }; Body: { new_pin?: string } }>(
     '/api/admin/businesses/:slug/reset-pin', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
       let pin = (req.body?.new_pin || '').trim()
       if (pin) {
@@ -147,7 +147,7 @@ export default async function adminRoutes(app: FastifyInstance) {
       } else {
         pin = String(Math.floor(100000 + Math.random() * 900000)) // 6자리 자동 생성
       }
-      db.prepare('UPDATE businesses SET manager_pin = ? WHERE slug = ?').run(hashPin(pin), req.params.slug)
+      await db.prepare('UPDATE businesses SET manager_pin = ? WHERE slug = ?').run(hashPin(pin), req.params.slug)
       return { ok: true, new_pin: pin }
     }
   )
@@ -156,7 +156,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 사장님 셀프(/api/businesses/:slug/sms-notify, requireManagerAuth)와 동일 검증.
   app.patch<{ Params: { slug: string }; Body: { notify_phone?: string | null; sms_notify_enabled?: boolean } }>(
     '/api/admin/businesses/:slug/sms-notify', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id, notify_phone, plan FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT id, notify_phone, plan FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
 
       const { notify_phone, sms_notify_enabled } = req.body
@@ -184,13 +184,13 @@ export default async function adminRoutes(app: FastifyInstance) {
         if (sms_notify_enabled && !finalPhone) {
           return reply.code(400).send({ error: '알림을 켜려면 받는 번호를 먼저 입력하세요' })
         }
-        updates.push('sms_notify_enabled = ?'); params.push(sms_notify_enabled ? 1 : 0)
+        updates.push('sms_notify_enabled = ?'); params.push(!!sms_notify_enabled)
       }
       if (updates.length === 0) return reply.code(400).send({ error: '변경할 항목이 없습니다' })
 
       params.push(req.params.slug)
-      db.prepare(`UPDATE businesses SET ${updates.join(', ')} WHERE slug = ?`).run(...params)
-      const updated = db.prepare('SELECT notify_phone, sms_notify_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
+      await db.prepare(`UPDATE businesses SET ${updates.join(', ')} WHERE slug = ?`).run(...params)
+      const updated = await db.prepare('SELECT notify_phone, sms_notify_enabled FROM businesses WHERE slug = ?').get(req.params.slug)
       return { ok: true, ...updated as object }
     }
   )
@@ -208,7 +208,7 @@ export default async function adminRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: '이메일 형식이 올바르지 않아요 (비우거나 정확한 이메일을 입력)' })
       }
 
-      const slug = generateSlug()
+      const slug = await generateSlug()
       const hashedPin = hashPin(manager_pin)
 
       let ownerUserId: number | null = null
@@ -217,10 +217,10 @@ export default async function adminRoutes(app: FastifyInstance) {
       if (trimmedEmail) {
         // owner placeholder user (이미 있으면 재사용)
         const email = trimmedEmail.toLowerCase()
-        let user = db.prepare("SELECT id FROM users WHERE provider = 'google' AND email = ?").get(email) as any
+        let user = await db.prepare("SELECT id FROM users WHERE provider = 'google' AND email = ?").get(email) as any
         if (!user) {
           const placeholder = `pending:${email}`
-          const result = db.prepare(
+          const result = await db.prepare(
             'INSERT INTO users (provider, provider_id, email) VALUES (?, ?, ?)'
           ).run('google', placeholder, email)
           user = { id: Number(result.lastInsertRowid) }
@@ -229,7 +229,7 @@ export default async function adminRoutes(app: FastifyInstance) {
         resolvedEmail = email
       }
 
-      db.prepare('INSERT INTO businesses (slug, name, manager_pin, owner_user_id, time_off_enabled) VALUES (?, ?, ?, ?, 0)')
+      await db.prepare('INSERT INTO businesses (slug, name, manager_pin, owner_user_id, time_off_enabled) VALUES (?, ?, ?, ?, 0)')
         .run(slug, name.trim(), hashedPin, ownerUserId)
 
       return { ok: true, slug, name: name.trim(), owner_email: resolvedEmail, owner_user_id: ownerUserId }
@@ -239,26 +239,26 @@ export default async function adminRoutes(app: FastifyInstance) {
   // 3) owner 이메일 변경/해제
   app.patch<{ Params: { slug: string }; Body: { owner_email: string | null } }>(
     '/api/admin/businesses/:slug/owner', { preHandler: requireAdminAuth }, async (req, reply) => {
-      const biz = db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT id FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장 없음' })
 
       if (req.body.owner_email === null) {
-        db.prepare('UPDATE businesses SET owner_user_id = NULL WHERE slug = ?').run(req.params.slug)
+        await db.prepare('UPDATE businesses SET owner_user_id = NULL WHERE slug = ?').run(req.params.slug)
         return { ok: true, owner_user_id: null }
       }
 
       const email = req.body.owner_email.trim().toLowerCase()
       if (!email.includes('@')) return reply.code(400).send({ error: '올바른 이메일 필수' })
 
-      let user = db.prepare("SELECT id FROM users WHERE provider = 'google' AND email = ?").get(email) as any
+      let user = await db.prepare("SELECT id FROM users WHERE provider = 'google' AND email = ?").get(email) as any
       if (!user) {
         const placeholder = `pending:${email}`
-        const result = db.prepare(
+        const result = await db.prepare(
           'INSERT INTO users (provider, provider_id, email) VALUES (?, ?, ?)'
         ).run('google', placeholder, email)
         user = { id: Number(result.lastInsertRowid) }
       }
-      db.prepare('UPDATE businesses SET owner_user_id = ? WHERE slug = ?').run(user.id, req.params.slug)
+      await db.prepare('UPDATE businesses SET owner_user_id = ? WHERE slug = ?').run(user.id, req.params.slug)
       return { ok: true, owner_user_id: user.id, email }
     }
   )
@@ -275,43 +275,43 @@ export default async function adminRoutes(app: FastifyInstance) {
     const todayStart = kst().slice(0, 10) + ' 00:00:00'
     const cutoff7 = kst(-7 * 86400000)
     const cutoff30 = kst(-30 * 86400000)
-    const one = (sql: string, ...p: any[]) => (db.prepare(sql).get(...p) as any)?.n ?? 0
+    const one = async (sql: string, ...p: any[]) => (await db.prepare(sql).get(...p) as any)?.n ?? 0
 
     // 사업장
-    const bizTotal = one('SELECT COUNT(*) n FROM businesses')
-    const bizByPlan = db.prepare('SELECT plan, COUNT(*) n FROM businesses GROUP BY plan').all() as any[]
-    const bizNew7 = one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff7)
-    const bizNew30 = one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff30)
-    const paidTotal = one("SELECT COUNT(*) n FROM businesses WHERE plan != 'free'")
+    const bizTotal = await one('SELECT COUNT(*) n FROM businesses')
+    const bizByPlan = await db.prepare('SELECT plan, COUNT(*) n FROM businesses GROUP BY plan').all() as any[]
+    const bizNew7 = await one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff7)
+    const bizNew30 = await one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff30)
+    const paidTotal = await one("SELECT COUNT(*) n FROM businesses WHERE plan != 'free'")
 
     // 활성 사업장(최근 출퇴근 발생 기준)
-    const activeBiz7 = one(
+    const activeBiz7 = await one(
       'SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff7)
-    const activeBiz30 = one(
+    const activeBiz30 = await one(
       'SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff30)
 
     // 직원
-    const empActive = one("SELECT COUNT(*) n FROM employees WHERE status = 'active'")
-    const empTotal = one('SELECT COUNT(*) n FROM employees')
+    const empActive = await one("SELECT COUNT(*) n FROM employees WHERE status = 'active'")
+    const empTotal = await one('SELECT COUNT(*) n FROM employees')
 
     // 출퇴근
-    const attToday = one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', todayStart)
-    const att7 = one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', cutoff7)
-    const attDaily = db.prepare(
+    const attToday = await one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', todayStart)
+    const att7 = await one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', cutoff7)
+    const attDaily = await db.prepare(
       "SELECT substr(clock_in,1,10) d, COUNT(*) n FROM attendance WHERE clock_in >= ? GROUP BY d ORDER BY d").all(cutoff7) as any[]
 
     // 로그인(활성 사용자)
-    const loginUsers7 = one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff7)
-    const loginUsers30 = one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff30)
+    const loginUsers7 = await one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff7)
+    const loginUsers30 = await one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff30)
 
     // 알림 발송
-    const notifSent7 = one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff7)
-    const notifSent30 = one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff30)
+    const notifSent7 = await one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff7)
+    const notifSent30 = await one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff30)
 
     // 문의
-    const inqTotal = one('SELECT COUNT(*) n FROM inquiries')
-    const inqNew = one("SELECT COUNT(*) n FROM inquiries WHERE status = 'new'")
-    const inqByType = db.prepare(
+    const inqTotal = await one('SELECT COUNT(*) n FROM inquiries')
+    const inqNew = await one("SELECT COUNT(*) n FROM inquiries WHERE status = 'new'")
+    const inqByType = await db.prepare(
       "SELECT COALESCE(inquiry_type,'(미선택)') t, COUNT(*) n FROM inquiries GROUP BY t ORDER BY n DESC").all() as any[]
 
     return {

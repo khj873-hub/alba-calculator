@@ -26,7 +26,7 @@ export interface SmsResult {
 
 type LogStatus = 'sent' | 'failed' | 'skipped'
 
-function logNotification(row: {
+async function logNotification(row: {
   channel: 'sms' | 'alimtalk'
   to: string
   template?: string
@@ -36,7 +36,7 @@ function logNotification(row: {
   error?: string
 }) {
   try {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO notification_logs (channel, to_phone, template, message, status, provider_id, error)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(row.channel, row.to, row.template ?? null, row.message, row.status, row.providerId ?? null, row.error ?? null)
@@ -58,24 +58,24 @@ export async function sendSms(params: { to: string; text: string; template?: str
 
   if (!service || !SENDER) {
     console.log('[sms] SOLAPI 환경변수 미설정 — 발송 skip')
-    logNotification({ channel: 'sms', to, template, message: text, status: 'skipped' })
+    await logNotification({ channel: 'sms', to, template, message: text, status: 'skipped' })
     return { ok: false, skipped: true, channel: 'sms' }
   }
   if (!to) {
     console.warn('[sms] 수신번호 없음 — 발송 skip')
-    logNotification({ channel: 'sms', to: '', template, message: text, status: 'skipped', error: '수신번호 없음' })
+    await logNotification({ channel: 'sms', to: '', template, message: text, status: 'skipped', error: '수신번호 없음' })
     return { ok: false, skipped: true, channel: 'sms', error: '수신번호 없음' }
   }
 
   try {
     const res: any = await service.send({ to, from: onlyDigits(SENDER), text })
     const providerId = pickProviderId(res)
-    logNotification({ channel: 'sms', to, template, message: text, status: 'sent', providerId })
+    await logNotification({ channel: 'sms', to, template, message: text, status: 'sent', providerId })
     return { ok: true, skipped: false, channel: 'sms', providerId }
   } catch (e: any) {
     const msg = e?.message || String(e)
     console.error('[sms] 발송 실패:', msg)
-    logNotification({ channel: 'sms', to, template, message: text, status: 'failed', error: msg })
+    await logNotification({ channel: 'sms', to, template, message: text, status: 'failed', error: msg })
     return { ok: false, skipped: false, channel: 'sms', error: msg }
   }
 }
@@ -94,10 +94,10 @@ export async function sendAlimtalk(params: {
 
   // 알림톡 불가 조건 → SMS로 폴백
   if (!service || !SENDER || !PFID || !templateId) {
-    return sendSms({ to: params.to, text: fallbackText, template })
+    return await sendSms({ to: params.to, text: fallbackText, template })
   }
   if (!to) {
-    logNotification({ channel: 'alimtalk', to: '', template, message: fallbackText, status: 'skipped', error: '수신번호 없음' })
+    await logNotification({ channel: 'alimtalk', to: '', template, message: fallbackText, status: 'skipped', error: '수신번호 없음' })
     return { ok: false, skipped: true, channel: 'alimtalk', error: '수신번호 없음' }
   }
 
@@ -114,13 +114,13 @@ export async function sendAlimtalk(params: {
       },
     })
     const providerId = pickProviderId(res)
-    logNotification({ channel: 'alimtalk', to, template, message: fallbackText, status: 'sent', providerId })
+    await logNotification({ channel: 'alimtalk', to, template, message: fallbackText, status: 'sent', providerId })
     return { ok: true, skipped: false, channel: 'alimtalk', providerId }
   } catch (e: any) {
     const msg = e?.message || String(e)
     console.error('[alimtalk] 발송 실패 → SMS 폴백:', msg)
-    logNotification({ channel: 'alimtalk', to, template, message: fallbackText, status: 'failed', error: msg })
+    await logNotification({ channel: 'alimtalk', to, template, message: fallbackText, status: 'failed', error: msg })
     // 알림톡 호출 자체가 실패하면 SMS로 한 번 더 시도
-    return sendSms({ to: params.to, text: fallbackText, template })
+    return await sendSms({ to: params.to, text: fallbackText, template })
   }
 }

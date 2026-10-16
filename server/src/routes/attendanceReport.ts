@@ -4,8 +4,8 @@ import { requireManagerAuth } from '../middleware/auth'
 import { planAllows } from '../plans'
 
 // 근태 리포트 게이트 — 사업장 조회 + attendanceReport(베이직+) 확인. grace도 함께 반환.
-function reportGate(slug: string): { bizId: number; grace: number } | { err: number; body: any } {
-  const biz = db.prepare('SELECT id, plan, grace_minutes FROM businesses WHERE slug = ?').get(slug) as any
+async function reportGate(slug: string): Promise<{ bizId: number; grace: number } | { err: number; body: any }> {
+  const biz = await db.prepare('SELECT id, plan, grace_minutes FROM businesses WHERE slug = ?').get(slug) as any
   if (!biz) return { err: 404, body: { error: '사업장을 찾을 수 없습니다' } }
   if (!planAllows(biz.plan ?? 'free', 'attendanceReport')) {
     return {
@@ -28,22 +28,22 @@ export default async function attendanceReportRoutes(app: FastifyInstance) {
   // 직원 근무 스케줄 조회 (요일별)
   app.get<{ Params: { slug: string; id: string } }>(
     '/api/:slug/employees/:id/schedule', { preHandler: requireManagerAuth }, async (req, reply) => {
-      const g = reportGate(req.params.slug)
+      const g = await reportGate(req.params.slug)
       if ('err' in g) return reply.code(g.err).send(g.body)
       const id = Number(req.params.id)
-      const emp = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, g.bizId)
+      const emp = await db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, g.bizId)
       if (!emp) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
-      return db.prepare('SELECT weekday, start_time, end_time, is_off FROM employee_schedules WHERE employee_id = ? ORDER BY weekday').all(id)
+      return await db.prepare('SELECT weekday, start_time, end_time, is_off FROM employee_schedules WHERE employee_id = ? ORDER BY weekday').all(id)
     }
   )
 
   // 직원 근무 스케줄 일괄 저장 (요일별 upsert)
   app.put<{ Params: { slug: string; id: string }; Body: { schedule: { weekday: number; start_time?: string | null; end_time?: string | null; is_off?: boolean }[] } }>(
     '/api/:slug/employees/:id/schedule', { preHandler: requireManagerAuth }, async (req, reply) => {
-      const g = reportGate(req.params.slug)
+      const g = await reportGate(req.params.slug)
       if ('err' in g) return reply.code(g.err).send(g.body)
       const id = Number(req.params.id)
-      const emp = db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, g.bizId)
+      const emp = await db.prepare('SELECT id FROM employees WHERE id = ? AND business_id = ?').get(id, g.bizId)
       if (!emp) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
       const schedule = req.body?.schedule
       if (!Array.isArray(schedule)) return reply.code(400).send({ error: 'schedule 배열이 필요합니다' })
@@ -55,23 +55,25 @@ export default async function attendanceReportRoutes(app: FastifyInstance) {
           if (hhmmToMin(s.start_time as string) >= hhmmToMin(s.end_time as string)) return reply.code(400).send({ error: '퇴근 시각이 출근 시각보다 늦어야 합니다' })
         }
       }
-      const up = db.prepare(`
+      const up = await db.prepare(`
         INSERT INTO employee_schedules (employee_id, weekday, start_time, end_time, is_off)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(employee_id, weekday) DO UPDATE SET start_time = excluded.start_time, end_time = excluded.end_time, is_off = excluded.is_off
       `)
-      const tx = db.transaction(() => {
-        for (const s of schedule) up.run(id, s.weekday, s.is_off ? null : s.start_time, s.is_off ? null : s.end_time, s.is_off ? 1 : 0)
+      const tx = db.transaction(async () => {
+        for (const s of schedule) {
+          await up.run(id, s.weekday, s.is_off ? null : s.start_time, s.is_off ? null : s.end_time, !!s.is_off)
+        }
       })
-      tx()
-      return db.prepare('SELECT weekday, start_time, end_time, is_off FROM employee_schedules WHERE employee_id = ? ORDER BY weekday').all(id)
+      await tx()
+      return await db.prepare('SELECT weekday, start_time, end_time, is_off FROM employee_schedules WHERE employee_id = ? ORDER BY weekday').all(id)
     }
   )
 
   // 월간 근태 리포트 — 지각/조퇴/결근/퇴근누락 (조회 시 파생 계산, 상태 비저장)
   app.get<{ Params: { slug: string }; Querystring: { year?: string; month?: string } }>(
     '/api/:slug/attendance-report', { preHandler: requireManagerAuth }, async (req, reply) => {
-      const g = reportGate(req.params.slug)
+      const g = await reportGate(req.params.slug)
       if ('err' in g) return reply.code(g.err).send(g.body)
       const year = Number(req.query.year), month = Number(req.query.month)
       if (!year || !month || month < 1 || month > 12) return reply.code(400).send({ error: 'year, month가 필요합니다' })
@@ -79,16 +81,16 @@ export default async function attendanceReportRoutes(app: FastifyInstance) {
       const today = todayKSTYmd()
       const grace = g.grace
 
-      const employees = db.prepare("SELECT id, name FROM employees WHERE business_id = ? AND status = 'active' ORDER BY id").all(g.bizId) as any[]
+      const employees = await db.prepare("SELECT id, name FROM employees WHERE business_id = ? AND status = 'active' ORDER BY id").all(g.bizId) as any[]
 
-      const scheds = db.prepare(`
+      const scheds = await db.prepare(`
         SELECT s.employee_id, s.weekday, s.start_time, s.end_time, s.is_off
         FROM employee_schedules s JOIN employees e ON e.id = s.employee_id WHERE e.business_id = ?
       `).all(g.bizId) as any[]
       const schedMap: Record<number, Record<number, any>> = {}
       for (const s of scheds) { (schedMap[s.employee_id] ??= {})[s.weekday] = s }
 
-      const atts = db.prepare(`
+      const atts = await db.prepare(`
         SELECT a.employee_id, a.clock_in, a.clock_out
         FROM attendance a JOIN employees e ON e.id = a.employee_id
         WHERE e.business_id = ? AND a.clock_in LIKE ?
@@ -96,7 +98,7 @@ export default async function attendanceReportRoutes(app: FastifyInstance) {
       const attMap: Record<number, Record<string, any[]>> = {}
       for (const a of atts) { const d = a.clock_in.slice(0, 10); ((attMap[a.employee_id] ??= {})[d] ??= []).push(a) }
 
-      const offs = db.prepare(`
+      const offs = await db.prepare(`
         SELECT t.employee_id, t.date FROM time_off t JOIN employees e ON e.id = t.employee_id
         WHERE e.business_id = ? AND t.date LIKE ?
       `).all(g.bizId, ym + '%') as any[]

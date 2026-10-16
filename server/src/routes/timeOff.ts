@@ -5,8 +5,8 @@ import { requireManagerAuth } from '../middleware/auth'
 const TYPES = ['annual', 'unpaid', 'sick', 'family'] as const
 type LeaveType = typeof TYPES[number]
 
-function verifyEmployeeInBusiness(slug: string, employeeId: number): boolean {
-  const row = db.prepare(`
+async function verifyEmployeeInBusiness(slug: string, employeeId: number): Promise<boolean> {
+  const row = await db.prepare(`
     SELECT e.id FROM employees e
     JOIN businesses b ON b.id = e.business_id
     WHERE e.id = ? AND b.slug = ?
@@ -23,9 +23,9 @@ export default async function timeOffRoutes(app: FastifyInstance) {
       const prefix = `${year}-${String(month).padStart(2, '0')}`
 
       if (employee_id) {
-        if (!verifyEmployeeInBusiness(slug, Number(employee_id)))
+        if (!await verifyEmployeeInBusiness(slug, Number(employee_id)))
           return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
-        return db.prepare(`
+        return await db.prepare(`
           SELECT t.*, e.name AS employee_name, e.color, e.hourly_rate
           FROM time_off t JOIN employees e ON e.id = t.employee_id
           WHERE t.employee_id = ? AND t.date LIKE ?
@@ -33,7 +33,7 @@ export default async function timeOffRoutes(app: FastifyInstance) {
         `).all(Number(employee_id), `${prefix}%`)
       }
 
-      return db.prepare(`
+      return await db.prepare(`
         SELECT t.*, e.name AS employee_name, e.color, e.hourly_rate
         FROM time_off t
         JOIN employees e ON e.id = t.employee_id
@@ -58,14 +58,14 @@ export default async function timeOffRoutes(app: FastifyInstance) {
       const finalPortion = portion === 0.5 ? 0.5 : 1.0
       const finalHalf: 'am' | 'pm' | 'full' = finalPortion === 0.5 ? (half_period === 'pm' ? 'pm' : 'am') : 'full'
 
-      if (!verifyEmployeeInBusiness(req.params.slug, employee_id))
+      if (!await verifyEmployeeInBusiness(req.params.slug, employee_id))
         return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
 
       try {
-        const result = db.prepare(
+        const result = await db.prepare(
           'INSERT INTO time_off (employee_id, date, type, portion, half_period, memo) VALUES (?, ?, ?, ?, ?, ?)'
         ).run(employee_id, date, type, finalPortion, finalHalf, memo?.trim() || null)
-        return db.prepare('SELECT * FROM time_off WHERE id = ?').get(result.lastInsertRowid)
+        return await db.prepare('SELECT * FROM time_off WHERE id = ?').get(result.lastInsertRowid)
       } catch (e: any) {
         if (String(e.message).includes('UNIQUE')) {
           return reply.code(409).send({ error: '같은 날짜에 이미 같은 시간대 휴가가 등록돼 있습니다' })
@@ -79,14 +79,14 @@ export default async function timeOffRoutes(app: FastifyInstance) {
   app.delete<{ Params: { slug: string; id: string } }>(
     '/api/:slug/time-off/:id', { preHandler: requireManagerAuth }, async (req, reply) => {
       const id = Number(req.params.id)
-      const row = db.prepare(`
+      const row = await db.prepare(`
         SELECT t.id FROM time_off t
         JOIN employees e ON e.id = t.employee_id
         JOIN businesses b ON b.id = e.business_id
         WHERE t.id = ? AND b.slug = ?
       `).get(id, req.params.slug)
       if (!row) return reply.code(404).send({ error: '기록을 찾을 수 없습니다' })
-      db.prepare('DELETE FROM time_off WHERE id = ?').run(id)
+      await db.prepare('DELETE FROM time_off WHERE id = ?').run(id)
       return { ok: true }
     }
   )

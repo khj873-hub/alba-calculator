@@ -10,7 +10,7 @@ import { planAllows, activeLimit } from '../plans'
 // 사업장이 알림을 켜고(sms_notify_enabled=1) 수신번호(notify_phone)가 있을 때만 발송.
 async function sendCheckInNotification(employeeId: number, clockInTime: string) {
   try {
-    const row = db.prepare(`
+    const row = await db.prepare(`
       SELECT e.name AS employee_name, b.name AS business_name, b.plan AS plan,
              b.notify_phone AS notify_phone, b.sms_notify_enabled AS sms_notify_enabled
       FROM employees e JOIN businesses b ON b.id = e.business_id
@@ -33,7 +33,7 @@ async function sendCheckInNotification(employeeId: number, clockInTime: string) 
 // 퇴근 알림(SMS) 발송 — 출근 알림과 동일하게 퇴근 처리와 완전히 분리.
 async function sendCheckOutNotification(employeeId: number, clockOutTime: string) {
   try {
-    const row = db.prepare(`
+    const row = await db.prepare(`
       SELECT e.name AS employee_name, b.name AS business_name, b.plan AS plan,
              b.notify_phone AS notify_phone, b.sms_notify_enabled AS sms_notify_enabled
       FROM employees e JOIN businesses b ON b.id = e.business_id
@@ -62,11 +62,11 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function checkLocation(slug: string, lat?: number, lng?: number, sessionToken?: string): string | null {
-  const biz = db.prepare('SELECT lat, lng, radius_meters, plan FROM businesses WHERE slug = ?').get(slug) as any
+async function checkLocation(slug: string, lat?: number, lng?: number, sessionToken?: string): Promise<string | null> {
+  const biz = await db.prepare('SELECT lat, lng, radius_meters, plan FROM businesses WHERE slug = ?').get(slug) as any
   if (!biz?.lat || !biz?.lng) return null // 위치 미설정 → 제한 없음
   if (!planAllows(biz.plan, 'gps')) return null // 유료 전용 — 무료(만료 다운그레이드 포함)는 기존 lat/lng 있어도 GPS 미적용. 재업그레이드 시 자동 복구
-  if (sessionToken && getValidSession(slug, sessionToken)) return null // 유효 세션(관리자) → 우회
+  if (sessionToken && await getValidSession(slug, sessionToken)) return null // 유효 세션(관리자) → 우회
   if (lat == null || lng == null) return '위치 정보가 필요합니다. 위치 권한을 허용해주세요.'
   const dist = Math.round(haversine(biz.lat, biz.lng, lat, lng))
   if (dist > biz.radius_meters) return `사업장 반경 ${biz.radius_meters}m 밖에 있습니다 (현재 약 ${dist}m)`
@@ -99,8 +99,8 @@ function calcWeeklyHolidayPay(weekMap: Map<string, number>, hourlyRate: number, 
   return total
 }
 
-function verifyEmployee(slug: string, employeeId: number): boolean {
-  const result = db.prepare(`
+async function verifyEmployee(slug: string, employeeId: number): Promise<boolean> {
+  const result = await db.prepare(`
     SELECT e.id FROM employees e
     JOIN businesses b ON b.id = e.business_id
     WHERE e.id = ? AND b.slug = ?
@@ -108,32 +108,32 @@ function verifyEmployee(slug: string, employeeId: number): boolean {
   return !!result
 }
 
-function resolveEmployeeId(slug: string, employeeId?: number, token?: string): number | null {
+async function resolveEmployeeId(slug: string, employeeId?: number, token?: string): Promise<number | null> {
   if (token) {
-    const row = db.prepare(`
+    const row = await db.prepare(`
       SELECT e.id FROM employees e
       JOIN businesses b ON b.id = e.business_id
       WHERE b.slug = ? AND e.access_token = ?
     `).get(slug, token) as any
     return row?.id ?? null
   }
-  if (employeeId != null && verifyEmployee(slug, employeeId)) return employeeId
+  if (employeeId != null && await verifyEmployee(slug, employeeId)) return employeeId
   return null
 }
 
 // 출퇴근 인원 게이트: 활성 인원이 플랜 한도를 넘으면 "최근 등록한 limit명"만 출퇴근 허용.
 // 최근 기준 = 등록 순(id) 내림차순. 이 직원보다 나중에 등록된 활성 직원 수가 limit 미만이면 허용.
 // 무제한 플랜(limit=null)이거나 한도 이내면 항상 허용.
-function attendanceGate(slug: string, empId: number): { ok: true } | { ok: false; limit: number } {
-  const biz = db.prepare('SELECT id, plan FROM businesses WHERE slug = ?').get(slug) as any
+async function attendanceGate(slug: string, empId: number): Promise<{ ok: true } | { ok: false; limit: number }> {
+  const biz = await db.prepare('SELECT id, plan FROM businesses WHERE slug = ?').get(slug) as any
   if (!biz) return { ok: true }
   const limit = activeLimit(biz.plan)
   if (limit === null) return { ok: true } // 무제한
-  const emp = db.prepare(
+  const emp = await db.prepare(
     "SELECT id FROM employees WHERE id = ? AND business_id = ? AND status = 'active'"
   ).get(empId, biz.id) as any
   if (!emp) return { ok: true } // 비활성/타사업장은 여기서 판정하지 않음
-  const newer = db.prepare(
+  const newer = await db.prepare(
     "SELECT COUNT(*) AS n FROM employees WHERE business_id = ? AND status = 'active' AND id > ?"
   ).get(biz.id, empId) as any
   return newer.n < limit ? { ok: true } : { ok: false, limit }
@@ -149,19 +149,19 @@ export default async function attendanceRoutes(app: FastifyInstance) {
     '/api/:slug/attendance/clock-in', async (req, reply) => {
       const { employee_id, token, lat, lng } = req.body
       const sessionToken = req.headers['x-session-token'] as string | undefined
-      const locErr = checkLocation(req.params.slug, lat, lng, sessionToken)
+      const locErr = await checkLocation(req.params.slug, lat, lng, sessionToken)
       if (locErr) return reply.code(403).send({ error: locErr })
 
-      const empId = resolveEmployeeId(req.params.slug, employee_id, token)
+      const empId = await resolveEmployeeId(req.params.slug, employee_id, token)
       if (!empId) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
 
       // 퇴사 직원은 출근 불가 (직접 링크·구 QR로의 접근 차단). 퇴근은 열린 근무 닫기 위해 허용.
-      const empStatus = db.prepare('SELECT status FROM employees WHERE id = ?').get(empId) as any
+      const empStatus = await db.prepare('SELECT status FROM employees WHERE id = ?').get(empId) as any
       if (empStatus?.status === 'resigned') {
         return reply.code(403).send({ error: '퇴사 처리된 직원은 출근할 수 없습니다.' })
       }
 
-      const gate = attendanceGate(req.params.slug, empId)
+      const gate = await attendanceGate(req.params.slug, empId)
       if (!gate.ok) {
         // error=친절 메시지(클라 표시용), code=머신 코드 — 기존 PLAN_LIMIT 컨벤션 동일
         return reply.code(403).send({
@@ -171,18 +171,18 @@ export default async function attendanceRoutes(app: FastifyInstance) {
         })
       }
 
-      const already = db.prepare(
+      const already = await db.prepare(
         'SELECT id FROM attendance WHERE employee_id = ? AND clock_out IS NULL'
       ).get(empId)
       if (already) return reply.code(400).send({ error: '이미 출근 중입니다' })
 
       const now = nowKST()
-      const result = db.prepare('INSERT INTO attendance (employee_id, clock_in) VALUES (?, ?)').run(empId, now)
-      const record = db.prepare('SELECT * FROM attendance WHERE id = ?').get(result.lastInsertRowid)
+      const result = await db.prepare('INSERT INTO attendance (employee_id, clock_in) VALUES (?, ?)').run(empId, now)
+      const record = await db.prepare('SELECT * FROM attendance WHERE id = ?').get(result.lastInsertRowid)
 
       // 사업주 출근 알림 — fire-and-forget. 발송 결과를 기다리지 않아 출근 응답이 지연되지 않고,
       // 실패해도 sendCheckInNotification 내부에서 삼켜 출근 처리에 영향이 없다.
-      void sendCheckInNotification(empId, now)
+      void await sendCheckInNotification(empId, now)
 
       return record
     }
@@ -193,25 +193,25 @@ export default async function attendanceRoutes(app: FastifyInstance) {
     '/api/:slug/attendance/clock-out', async (req, reply) => {
       const { employee_id, token, lat, lng } = req.body
       const sessionToken = req.headers['x-session-token'] as string | undefined
-      const locErr = checkLocation(req.params.slug, lat, lng, sessionToken)
+      const locErr = await checkLocation(req.params.slug, lat, lng, sessionToken)
       if (locErr) return reply.code(403).send({ error: locErr })
 
-      const empId = resolveEmployeeId(req.params.slug, employee_id, token)
+      const empId = await resolveEmployeeId(req.params.slug, employee_id, token)
       if (!empId) return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
 
-      const record = db.prepare(
+      const record = await db.prepare(
         'SELECT * FROM attendance WHERE employee_id = ? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1'
       ).get(empId) as any
       if (!record) return reply.code(400).send({ error: '출근 기록이 없습니다' })
 
       const now = nowKST()
-      db.prepare('UPDATE attendance SET clock_out = ? WHERE id = ?').run(now, record.id)
+      await db.prepare('UPDATE attendance SET clock_out = ? WHERE id = ?').run(now, record.id)
 
       // 사업주 퇴근 알림 — 출근과 동일한 fire-and-forget. 발송 결과를 기다리지 않고,
       // 실패해도 sendCheckOutNotification 내부에서 삼켜 퇴근 처리에 영향이 없다.
-      void sendCheckOutNotification(empId, now)
+      void await sendCheckOutNotification(empId, now)
 
-      return db.prepare('SELECT * FROM attendance WHERE id = ?').get(record.id)
+      return await db.prepare('SELECT * FROM attendance WHERE id = ?').get(record.id)
     }
   )
 
@@ -229,9 +229,9 @@ export default async function attendanceRoutes(app: FastifyInstance) {
 
       // 월 경계(예: 5/31 22:00 ~ 6/1 06:00) 근무도 양쪽 월에서 조회되도록 clock_in/clock_out 모두 매칭
       if (employee_id) {
-        if (!verifyEmployee(slug, Number(employee_id)))
+        if (!await verifyEmployee(slug, Number(employee_id)))
           return reply.code(404).send({ error: '직원을 찾을 수 없습니다' })
-        const rows = db.prepare(`
+        const rows = await db.prepare(`
           SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
           FROM attendance a JOIN employees e ON e.id = a.employee_id
           WHERE a.employee_id = ? AND (a.clock_in LIKE ? OR a.clock_out LIKE ?)
@@ -240,7 +240,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
         return addSegments(rows)
       }
 
-      const rows = db.prepare(`
+      const rows = await db.prepare(`
         SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color
         FROM attendance a
         JOIN employees e ON e.id = a.employee_id
@@ -259,7 +259,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const { year, month } = req.query
       const prefix = `${year}-${String(month).padStart(2, '0')}`
 
-      const biz = db.prepare(
+      const biz = await db.prepare(
         'SELECT leave_pay_calc_mode, weekly_holiday_includes_leave, time_off_enabled, weekly_holiday_threshold_hours, week_start_day FROM businesses WHERE slug = ?'
       ).get(slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
@@ -271,7 +271,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const weekStartDay: 0 | 1 = biz.week_start_day === 0 ? 0 : 1
 
       // payroll도 월 경계 근무 양쪽 월에서 잡히도록
-      const records = db.prepare(`
+      const records = await db.prepare(`
         SELECT a.*, e.name AS employee_name, e.hourly_rate, e.color, e.pay_includes_holiday
         FROM attendance a
         JOIN employees e ON e.id = a.employee_id
@@ -281,7 +281,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       `).all(slug, `${prefix}%`, `${prefix}%`) as any[]
 
       const timeOffRows = timeOffEnabled
-        ? db.prepare(`
+        ? await db.prepare(`
             SELECT t.* FROM time_off t
             JOIN employees e ON e.id = t.employee_id
             JOIN businesses b ON b.id = e.business_id
@@ -320,7 +320,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       for (const t of timeOffRows) {
         let entry = map.get(t.employee_id)
         if (!entry) {
-          const emp = db.prepare('SELECT name, hourly_rate, color FROM employees WHERE id = ?').get(t.employee_id) as any
+          const emp = await db.prepare('SELECT name, hourly_rate, color FROM employees WHERE id = ?').get(t.employee_id) as any
           if (!emp) continue
           entry = {
             employee_id: t.employee_id,
@@ -398,7 +398,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
   app.put<{ Params: { slug: string; id: string }; Body: { clock_in: string; clock_out?: string; memo?: string } }>(
     '/api/:slug/attendance/:id', { preHandler: requireManagerAuth }, async (req, reply) => {
       const id = Number(req.params.id)
-      const record = db.prepare(`
+      const record = await db.prepare(`
         SELECT a.id FROM attendance a
         JOIN employees e ON e.id = a.employee_id
         JOIN businesses b ON b.id = e.business_id
@@ -408,9 +408,9 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const { clock_in, clock_out, memo } = req.body
       if (clock_out && clock_out <= clock_in)
         return reply.code(400).send({ error: '퇴근 시간은 출근 시간보다 이후여야 합니다' })
-      db.prepare('UPDATE attendance SET clock_in=?, clock_out=?, memo=? WHERE id=?')
+      await db.prepare('UPDATE attendance SET clock_in=?, clock_out=?, memo=? WHERE id=?')
         .run(clock_in, clock_out ?? null, memo ?? null, id)
-      return db.prepare('SELECT * FROM attendance WHERE id = ?').get(id)
+      return await db.prepare('SELECT * FROM attendance WHERE id = ?').get(id)
     }
   )
 
@@ -418,14 +418,14 @@ export default async function attendanceRoutes(app: FastifyInstance) {
   app.delete<{ Params: { slug: string; id: string } }>(
     '/api/:slug/attendance/:id', { preHandler: requireManagerAuth }, async (req, reply) => {
       const id = Number(req.params.id)
-      const record = db.prepare(`
+      const record = await db.prepare(`
         SELECT a.id FROM attendance a
         JOIN employees e ON e.id = a.employee_id
         JOIN businesses b ON b.id = e.business_id
         WHERE a.id = ? AND b.slug = ?
       `).get(id, req.params.slug)
       if (!record) return reply.code(404).send({ error: '기록을 찾을 수 없습니다' })
-      db.prepare('DELETE FROM attendance WHERE id = ?').run(id)
+      await db.prepare('DELETE FROM attendance WHERE id = ?').run(id)
       return { ok: true }
     }
   )

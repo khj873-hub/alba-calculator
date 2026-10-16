@@ -59,7 +59,7 @@ export default async function oauthRoutes(app: FastifyInstance) {
 
     // 매니저 흐름 — 정지된 사업장은 OAuth 자체 거부
     if (!isAdmin && slug) {
-      const biz = db.prepare('SELECT is_active FROM businesses WHERE slug = ?').get(slug) as any
+      const biz = await db.prepare('SELECT is_active FROM businesses WHERE slug = ?').get(slug) as any
       if (biz && biz.is_active === 0) {
         return reply.code(403).send({ error: 'service_suspended', message: '서비스 이용이 일시 제한되었습니다.' })
       }
@@ -119,23 +119,23 @@ export default async function oauthRoutes(app: FastifyInstance) {
 
     // user upsert (sub로 먼저, 없으면 운영자가 미리 만든 placeholder를 이메일로 찾아 승격)
     let userId: number
-    const bySub = db.prepare(
+    const bySub = await db.prepare(
       'SELECT id FROM users WHERE provider = ? AND provider_id = ?'
     ).get('google', payload.sub) as any
     if (bySub) {
-      db.prepare('UPDATE users SET email = ?, name = ?, picture_url = ?, last_login_at = ? WHERE id = ?')
+      await db.prepare('UPDATE users SET email = ?, name = ?, picture_url = ?, last_login_at = ? WHERE id = ?')
         .run(payload.email, payload.name || null, payload.picture || null, nowKST(), bySub.id)
       userId = bySub.id
     } else {
-      const placeholder = db.prepare(
+      const placeholder = await db.prepare(
         "SELECT id FROM users WHERE provider = 'google' AND email = ? AND provider_id LIKE 'pending:%'"
       ).get(payload.email) as any
       if (placeholder) {
-        db.prepare('UPDATE users SET provider_id = ?, name = ?, picture_url = ?, last_login_at = ? WHERE id = ?')
+        await db.prepare('UPDATE users SET provider_id = ?, name = ?, picture_url = ?, last_login_at = ? WHERE id = ?')
           .run(payload.sub, payload.name || null, payload.picture || null, nowKST(), placeholder.id)
         userId = placeholder.id
       } else {
-        const result = db.prepare(
+        const result = await db.prepare(
           'INSERT INTO users (provider, provider_id, email, name, picture_url, last_login_at) VALUES (?, ?, ?, ?, ?, ?)'
         ).run('google', payload.sub, payload.email, payload.name || null, payload.picture || null, nowKST())
         userId = Number(result.lastInsertRowid)
@@ -145,9 +145,9 @@ export default async function oauthRoutes(app: FastifyInstance) {
     // 신규 가입 흐름: 구글 신원확인 완료 → 1회용 signup 토큰 발급 후 /create 로 복귀
     // (사업장명·PIN은 아직 미입력. 프런트에서 입력받아 createBusiness에 토큰과 함께 제출)
     if (ctx.signup) {
-      db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
+      await db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
       const signupToken = randomBytes(24).toString('hex')
-      db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
+      await db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
         .run(signupToken, `__signup__:${userId}`, expiresKST(1))
       return reply.redirect(
         `${PUBLIC_ORIGIN}/create#signup=${signupToken}&email=${encodeURIComponent(payload.email)}`
@@ -159,16 +159,16 @@ export default async function oauthRoutes(app: FastifyInstance) {
       if (!isAdminEmail(payload.email)) {
         return reply.redirect(`${PUBLIC_ORIGIN}/admin?oauth_error=${encodeURIComponent('운영자 권한이 없는 계정입니다')}`)
       }
-      db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
+      await db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
       const sessionToken = randomBytes(32).toString('hex')
-      db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
+      await db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
         .run(sessionToken, '__admin__', expiresKST(24))
       return reply.redirect(`${PUBLIC_ORIGIN}/admin#token=${sessionToken}`)
     }
 
     // 매니저(사장) 흐름
     if (!ctx.slug) return errRedirect('내부 상태 누락')
-    const biz = db.prepare('SELECT owner_user_id FROM businesses WHERE slug = ?').get(ctx.slug) as any
+    const biz = await db.prepare('SELECT owner_user_id FROM businesses WHERE slug = ?').get(ctx.slug) as any
     if (!biz) return errRedirect('사업장을 찾을 수 없습니다')
 
     if (biz.owner_user_id != null && biz.owner_user_id !== userId) {
@@ -181,9 +181,9 @@ export default async function oauthRoutes(app: FastifyInstance) {
       )
     }
 
-    db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
+    await db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
     const sessionToken = randomBytes(32).toString('hex')
-    db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
+    await db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
       .run(sessionToken, ctx.slug, expiresKST(24))
     return reply.redirect(`${PUBLIC_ORIGIN}/${ctx.slug}/manager#token=${sessionToken}`)
   })
@@ -195,22 +195,22 @@ export default async function oauthRoutes(app: FastifyInstance) {
       const { pin, email } = req.body
       if (!email?.trim()) return reply.code(400).send({ error: '이메일이 필요합니다' })
 
-      const biz = db.prepare('SELECT id, manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT id, manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
 
       if (!verifyPinHash(pin, biz.manager_pin)) return reply.code(401).send({ error: 'PIN이 올바르지 않습니다' })
 
       // 이메일로 user 찾기 또는 placeholder 생성
-      let user = db.prepare('SELECT id FROM users WHERE provider = ? AND email = ?').get('google', email.trim()) as any
+      let user = await db.prepare('SELECT id FROM users WHERE provider = ? AND email = ?').get('google', email.trim()) as any
       if (!user) {
         // 이메일만으로 placeholder user 생성. provider_id는 첫 로그인 시 갱신.
         const placeholder = `pending:${email.trim()}`
-        const result = db.prepare(
+        const result = await db.prepare(
           'INSERT INTO users (provider, provider_id, email) VALUES (?, ?, ?)'
         ).run('google', placeholder, email.trim())
         user = { id: Number(result.lastInsertRowid) }
       }
-      db.prepare('UPDATE businesses SET owner_user_id = ? WHERE slug = ?').run(user.id, req.params.slug)
+      await db.prepare('UPDATE businesses SET owner_user_id = ? WHERE slug = ?').run(user.id, req.params.slug)
       return { ok: true, owner_user_id: user.id, email }
     }
   )
@@ -218,10 +218,10 @@ export default async function oauthRoutes(app: FastifyInstance) {
   // 사업장 owner 해제 (PIN 인증)
   app.delete<{ Params: { slug: string }; Body: { pin: string } }>(
     '/api/businesses/:slug/owner', async (req, reply) => {
-      const biz = db.prepare('SELECT manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
+      const biz = await db.prepare('SELECT manager_pin FROM businesses WHERE slug = ?').get(req.params.slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
       if (!verifyPinHash(req.body.pin, biz.manager_pin)) return reply.code(401).send({ error: 'PIN이 올바르지 않습니다' })
-      db.prepare('UPDATE businesses SET owner_user_id = NULL WHERE slug = ?').run(req.params.slug)
+      await db.prepare('UPDATE businesses SET owner_user_id = NULL WHERE slug = ?').run(req.params.slug)
       return { ok: true }
     }
   )

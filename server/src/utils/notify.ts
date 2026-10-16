@@ -26,7 +26,7 @@ export async function notifyCheckIn(p: CheckInNotifyParams): Promise<NotifyResul
   const biz = p.businessName || '퍼펙트 근태관리'
   const hhmm = hhmmOf(p.clockInTime)
   const fallbackText = `[${biz}] ${p.employeeName}님이 ${hhmm}에 출근했습니다.`
-  return sendAlimtalk({
+  return await sendAlimtalk({
     to: p.ownerPhone,
     templateId: TPL_CHECKIN,
     variables: { '#{사업장명}': biz, '#{직원명}': p.employeeName, '#{시간}': hhmm },
@@ -47,7 +47,7 @@ export async function notifyCheckOut(p: CheckOutNotifyParams): Promise<NotifyRes
   const biz = p.businessName || '퍼펙트 근태관리'
   const hhmm = hhmmOf(p.clockOutTime)
   const fallbackText = `[${biz}] ${p.employeeName}님이 ${hhmm}에 퇴근했습니다.`
-  return sendAlimtalk({
+  return await sendAlimtalk({
     to: p.ownerPhone,
     templateId: TPL_CHECKOUT,
     variables: { '#{사업장명}': biz, '#{직원명}': p.employeeName, '#{시간}': hhmm },

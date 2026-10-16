@@ -46,16 +46,16 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
       const src = (source || '').trim().slice(0, 40)
       const itype = (inquiry_type || '').trim().slice(0, 40)
 
-      const result = db.prepare(
+      const result = await db.prepare(
         `INSERT INTO inquiries (source, inquiry_type, business_name, phone, content, agreed_marketing, ip)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ).run(src || null, itype || null, name, ph, text || null, agreed_marketing ? 1 : 0, req.ip || null)
 
       // 이메일 알림 — fire-and-forget. 실패해도 사용자에게는 OK 응답.
-      const row = db.prepare(
+      const row = await db.prepare(
         'SELECT created_at FROM inquiries WHERE id = ?',
       ).get(Number(result.lastInsertRowid)) as { created_at: string } | undefined
-      sendInquiryNotification({
+      await sendInquiryNotification({
         business_name: name,
         phone: ph,
         inquiry_type: itype,
@@ -78,14 +78,14 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
       const status = req.query?.status
       const limit = Math.min(Number(req.query?.limit) || 100, 500)
       const where = status && (ALLOWED_STATUS as readonly string[]).includes(status) ? 'WHERE status = ?' : ''
-      const stmt = db.prepare(
+      const stmt = await db.prepare(
         `SELECT id, source, inquiry_type, business_name, phone, content, agreed_marketing, ip, status, note, created_at, handled_at
          FROM inquiries ${where} ORDER BY created_at DESC LIMIT ?`,
       )
-      const rows = where ? stmt.all(status, limit) : stmt.all(limit)
-      const counts = db
+      const rows = where ? await stmt.all(status, limit) : await stmt.all(limit)
+      const counts = (await db
         .prepare("SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status")
-        .all() as { status: string; n: number }[]
+        .all()) as { status: string; n: number }[]
       return { rows, counts }
     },
   )
@@ -97,7 +97,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const id = Number(req.params.id)
       if (!Number.isFinite(id)) return reply.code(400).send({ error: 'invalid id' })
-      const found = db.prepare('SELECT id FROM inquiries WHERE id = ?').get(id)
+      const found = await db.prepare('SELECT id FROM inquiries WHERE id = ?').get(id)
       if (!found) return reply.code(404).send({ error: '문의 없음' })
 
       const status = req.body?.status
@@ -111,7 +111,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
         fields.push('status = ?')
         params.push(status)
         if (status !== 'new') {
-          fields.push("handled_at = datetime('now','localtime')")
+          fields.push("handled_at = now()")
         }
       }
       if (note !== undefined) {
@@ -120,7 +120,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
       }
       if (fields.length === 0) return { ok: true }
       params.push(id)
-      db.prepare(`UPDATE inquiries SET ${fields.join(', ')} WHERE id = ?`).run(...params)
+      await db.prepare(`UPDATE inquiries SET ${fields.join(', ')} WHERE id = ?`).run(...params)
       return { ok: true }
     },
   )
@@ -132,7 +132,7 @@ export default async function inquiriesRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const id = Number(req.params.id)
       if (!Number.isFinite(id)) return reply.code(400).send({ error: 'invalid id' })
-      db.prepare('DELETE FROM inquiries WHERE id = ?').run(id)
+      await db.prepare('DELETE FROM inquiries WHERE id = ?').run(id)
       return { ok: true }
     },
   )

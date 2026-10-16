@@ -14,8 +14,7 @@ import inquiriesRoutes from './routes/inquiries'
 import departmentsRoutes from './routes/departments'
 import attendanceReportRoutes from './routes/attendanceReport'
 import authRoutes from './routes/auth'
-import { db } from './db'
-import { startBackup } from './backup'
+import { db , ensureSeed } from './db'
 
 function todayKSTYmd() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -61,12 +60,12 @@ app.addHook('onRequest', async (req, reply) => {
   }
   if (!slug) return
 
-  const biz = db.prepare('SELECT is_active, plan, plan_expires_at FROM businesses WHERE slug = ?').get(slug) as any
+  const biz = await db.prepare('SELECT is_active, plan, plan_expires_at FROM businesses WHERE slug = ?').get(slug) as any
   if (biz) {
     // 유료 결제 만료 → 무료 자동 다운그레이드 (정지가 아니라 무료로 전환: 3명 한도 + 알림 OFF).
     // 모든 유료 플랜(basic/pro/enterprise/레거시 paid) 대상. free는 만료 개념 없음.
     if (biz.plan !== 'free' && biz.plan_expires_at && biz.plan_expires_at < todayKSTYmd()) {
-      db.prepare("UPDATE businesses SET plan = 'free', plan_expires_at = NULL WHERE slug = ?").run(slug)
+      await db.prepare("UPDATE businesses SET plan = 'free', plan_expires_at = NULL WHERE slug = ?").run(slug)
       biz.plan = 'free'
       biz.plan_expires_at = null
     }
@@ -101,9 +100,9 @@ if (isProd) {
 // 시작 시 이미 만료된 유료 사업장을 무료로 일괄 다운그레이드.
 // 미들웨어가 요청 시 lazy로도 처리하지만, 요청이 없어도 즉시 일관성을 맞춰
 // 어드민 통계·이미 만료된 건(예: 배포 시점에 만료 상태)을 바로 정리한다.
-function downgradeExpiredPlans() {
+async function downgradeExpiredPlans() {
   const today = todayKSTYmd()
-  const res = db
+  const res = await db
     .prepare(
       "UPDATE businesses SET plan = 'free', plan_expires_at = NULL WHERE plan != 'free' AND plan_expires_at IS NOT NULL AND plan_expires_at < ?"
     )
@@ -114,9 +113,13 @@ function downgradeExpiredPlans() {
 }
 
 const PORT = Number(process.env.PORT) || 3002
-app.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
+app.listen({ port: PORT, host: '0.0.0.0' }, async (err) => {
   if (err) { console.error(err); process.exit(1) }
   console.log(`Alba server running on http://localhost:${PORT}`)
-  downgradeExpiredPlans()
-  startBackup()
+  try {
+    await ensureSeed()
+    await downgradeExpiredPlans()
+  } catch (e) {
+    console.error('[startup] 초기화 실패:', e)
+  }
 })
