@@ -14,6 +14,7 @@ import inquiriesRoutes from './routes/inquiries'
 import departmentsRoutes from './routes/departments'
 import attendanceReportRoutes from './routes/attendanceReport'
 import authRoutes from './routes/auth'
+import { registerAgentRoutes } from './routes/agent'
 import { db , ensureSeed } from './db'
 
 function todayKSTYmd() {
@@ -88,6 +89,9 @@ app.register(inquiriesRoutes)
 app.register(departmentsRoutes)
 app.register(attendanceReportRoutes)
 app.register(authRoutes)
+
+// 퍼펙트 AI 매니저 읽기 전용 라우트 (AGENT_STORE_SLUG 매장만, x-agent-token 인증)
+registerAgentRoutes(app)
 
 app.get('/api/health', async () => ({ ok: true }))
 
