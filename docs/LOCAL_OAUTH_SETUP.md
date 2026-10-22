@@ -4,6 +4,13 @@
 >
 > 환경 변수가 비어 있으면 OAuth는 자동 비활성화되어 기존 PIN 흐름만 동작합니다 (안전).
 
+> **2026-10-17 기준 — 새로 만들 필요 없습니다.**
+> 운영용 클라이언트 `perfect-work (Vercel)` 에 `http://localhost:5174/api/auth/google/callback`
+> 이 이미 등록돼 있습니다. 1장을 건너뛰고, Vercel production 의
+> `GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` 을 그대로 `.env` 에 넣으면 됩니다.
+> 콘솔 위치·계정·게시 상태는 `VERCEL_MIGRATION.md` 의 "구글 운영자 로그인" 절 참고.
+> 아래 1장은 클라이언트를 **처음부터 새로 만들 때**의 절차입니다.
+
 ---
 
 ## 1. Google Cloud Console 설정 (5~10분)
