@@ -66,7 +66,7 @@ interface AdminBiz {
   last_attendance: string | null
   att7: number
   notify_phone: string | null
-  sms_notify_enabled: number
+  sms_notify_enabled: boolean
 }
 
 // YYYY-MM-DD KST 오늘
@@ -274,7 +274,7 @@ export default function AdminPage() {
   }
 
   const handleToggleSms = async (b: AdminBiz) => {
-    const next = b.sms_notify_enabled === 1 ? false : true
+    const next = !b.sms_notify_enabled
     if (next && !b.notify_phone) {
       alert('알림을 켜려면 받는 번호를 먼저 등록하세요')
       return
@@ -841,13 +841,13 @@ export default function AdminPage() {
                               <button
                                 onClick={() => handleToggleSms(b)}
                                 className={`text-xs font-bold px-2 py-1 rounded-lg border transition ${
-                                  b.sms_notify_enabled === 1
+                                  b.sms_notify_enabled
                                     ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
                                     : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
                                 }`}
                                 title="클릭해서 출근 SMS 알림 ON/OFF"
                               >
-                                {b.sms_notify_enabled === 1 ? '🔔 ON' : '🔕 OFF'}
+                                {b.sms_notify_enabled ? '🔔 ON' : '🔕 OFF'}
                               </button>
                               <span className="text-xs text-gray-600 font-mono">{b.notify_phone}</span>
                             </>

@@ -17,7 +17,7 @@ async function sendCheckInNotification(employeeId: number, clockInTime: string) 
       WHERE e.id = ?
     `).get(employeeId) as any
     if (!row) return
-    if (row.sms_notify_enabled !== 1 || !row.notify_phone) return // opt-in 사업장만
+    if (row.sms_notify_enabled !== true || !row.notify_phone) return // opt-in 사업장만
     if (!planAllows(row.plan, 'notifications')) return // 유료 전용 — 무료 플랜은 발송 안 함(비용 방지)
     await notifyCheckIn({
       employeeName: row.employee_name,
@@ -40,7 +40,7 @@ async function sendCheckOutNotification(employeeId: number, clockOutTime: string
       WHERE e.id = ?
     `).get(employeeId) as any
     if (!row) return
-    if (row.sms_notify_enabled !== 1 || !row.notify_phone) return // opt-in 사업장만
+    if (row.sms_notify_enabled !== true || !row.notify_phone) return // opt-in 사업장만
     if (!planAllows(row.plan, 'notifications')) return // 유료 전용 — 무료 플랜은 발송 안 함(비용 방지)
     await notifyCheckOut({
       employeeName: row.employee_name,
@@ -266,9 +266,9 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       ).get(slug) as any
       if (!biz) return reply.code(404).send({ error: '사업장을 찾을 수 없습니다' })
 
-      const timeOffEnabled: boolean = biz.time_off_enabled === 1
+      const timeOffEnabled: boolean = biz.time_off_enabled === true
       const leaveMode: '8hours' | 'avg_workhours' = biz.leave_pay_calc_mode === 'avg_workhours' ? 'avg_workhours' : '8hours'
-      const includeLeaveInWeekly: boolean = timeOffEnabled && biz.weekly_holiday_includes_leave === 1
+      const includeLeaveInWeekly: boolean = timeOffEnabled && biz.weekly_holiday_includes_leave === true
       const thresholdHours: number = Number(biz.weekly_holiday_threshold_hours ?? 15)
       const weekStartDay: 0 | 1 = biz.week_start_day === 0 ? 0 : 1
 
@@ -429,6 +429,69 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       if (!record) return reply.code(404).send({ error: '기록을 찾을 수 없습니다' })
       await db.prepare('DELETE FROM attendance WHERE id = ?').run(id)
       return { ok: true }
+    }
+  )
+
+  // 근태 일괄 입력 (관리자 전용)
+  //
+  // 과거 기록을 넣을 수단이 없었다 — 생성은 실시간 출근(clock-in)뿐이고 수정은 단건 PUT 뿐이라,
+  // 기존 고객 데이터 이관이나 테스트 시드를 만들 수 없었다. 그 구멍을 메운다.
+  //
+  // - 시각은 근태관리 공통 규칙대로 KST 벽시계 문자열 "YYYY-MM-DD HH:MM:SS"
+  // - 전부 성공하거나 전부 실패한다(트랜잭션). 일부만 들어가 데이터가 어긋나지 않게.
+  // - 알림(SMS)은 보내지 않는다. 과거 기록을 넣는데 지금 알림이 가면 안 된다.
+  const BULK_MAX = 1000
+  const STAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
+
+  app.post<{
+    Params: { slug: string }
+    Body: { records?: { employee_id?: number; clock_in?: string; clock_out?: string | null; memo?: string | null }[] }
+  }>(
+    '/api/:slug/attendance/bulk', { preHandler: requireManagerAuth }, async (req, reply) => {
+      const records = req.body?.records
+      if (!Array.isArray(records) || records.length === 0) {
+        return reply.code(400).send({ error: 'records 배열이 필요합니다' })
+      }
+      if (records.length > BULK_MAX) {
+        return reply.code(400).send({ error: `한 번에 ${BULK_MAX}건까지 가능합니다 (요청 ${records.length}건)` })
+      }
+
+      // 이 사업장 소속 직원만 허용 (다른 사업장 직원 id 를 넣는 것을 막는다)
+      const owned = await db.prepare(
+        'SELECT e.id FROM employees e JOIN businesses b ON b.id = e.business_id WHERE b.slug = ?'
+      ).all(req.params.slug) as any[]
+      if (owned.length === 0) return reply.code(404).send({ error: '사업장 또는 직원을 찾을 수 없습니다' })
+      const allowed = new Set(owned.map(r => Number(r.id)))
+
+      // 먼저 전수 검증 — 한 건이라도 어긋나면 아무것도 넣지 않는다.
+      const errors: { index: number; error: string }[] = []
+      records.forEach((r, i) => {
+        if (!r || typeof r !== 'object') return void errors.push({ index: i, error: '객체가 아닙니다' })
+        if (!allowed.has(Number(r.employee_id))) {
+          return void errors.push({ index: i, error: `이 사업장 직원이 아닙니다 (employee_id=${r.employee_id})` })
+        }
+        if (!r.clock_in || !STAMP.test(r.clock_in)) {
+          return void errors.push({ index: i, error: 'clock_in 형식은 "YYYY-MM-DD HH:MM:SS"' })
+        }
+        if (r.clock_out != null) {
+          if (!STAMP.test(r.clock_out)) return void errors.push({ index: i, error: 'clock_out 형식은 "YYYY-MM-DD HH:MM:SS"' })
+          if (r.clock_out <= r.clock_in) return void errors.push({ index: i, error: '퇴근은 출근보다 이후여야 합니다' })
+        }
+      })
+      if (errors.length > 0) {
+        return reply.code(400).send({ error: '검증 실패 — 아무것도 저장하지 않았습니다', count: errors.length, errors: errors.slice(0, 20) })
+      }
+
+      const ins = db.prepare('INSERT INTO attendance (employee_id, clock_in, clock_out, memo) VALUES (?, ?, ?, ?)')
+      const tx = db.transaction(async () => {
+        // forEach 는 async 콜백을 기다리지 않으므로 for...of 로 순차 실행한다.
+        for (const r of records) {
+          await ins.run(Number(r.employee_id), r.clock_in, r.clock_out ?? null, r.memo ?? null)
+        }
+      })
+      await tx()
+
+      return { ok: true, inserted: records.length }
     }
   )
 }
