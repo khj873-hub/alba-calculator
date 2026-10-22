@@ -50,6 +50,24 @@ Vercel 프로젝트 `perfect-attendance` = **랜딩 페이지**(perfect.jinusoft
 6. `datetime('now','localtime')` → `now()`, `INSERT OR IGNORE` → `ON CONFLICT DO NOTHING`
 7. `attendanceGate` 유니온 narrowing — 로컬 tsc 5.9.3 은 통과, Vercel 빌드 tsc 는 실패
 
+### ⚠️ boolean 은 두 번에 걸쳐 다 못 잡았다 (2026-10-22 추가 12곳)
+
+5번에서 "파라미터로 넘기는 자리"만 고쳤다. **SQL 문자열에 박힌 리터럴**과
+**JS 쪽 `=== 0 / !== 1` 비교**가 남아 있었고, 6일 뒤에야 증상으로 드러났다.
+
+| 남아 있던 곳 | 실제 증상 |
+|---|---|
+| `INSERT … time_off_enabled) VALUES (…, 0)` 2곳 | **사업장 생성이 전부 실패** (PG: boolean 자리에 integer) |
+| `UPDATE … is_active = 1` | 기한 연장 시 자동 활성화 안 됨 |
+| `is_active === 0` 서버 3곳 | **정지된 사업장이 차단되지 않음** (미들웨어·OAuth·자동활성화) |
+| `is_active === 1` 클라이언트 6곳 | 운영자 콘솔이 **모든 사업장을 "🔴 정지"로 표시** |
+| `sms_notify_enabled !== 1` 2곳 | **출퇴근 SMS 알림이 아예 발송되지 않음** |
+| `time_off_enabled === 1`, `weekly_holiday_includes_leave === 1` | 휴가·주휴수당 설정이 무시됨 |
+
+**교훈**: 타입이 바뀌면 파라미터뿐 아니라 ①SQL 리터럴 ②JS 비교 ③프런트 타입 선언까지
+한 번에 훑어야 한다. 프런트 타입을 `number` 로 남겨두면 컴파일러가 잡아주지도 않는다.
+지금은 서버·클라이언트 전체에 boolean 컬럼의 `=== 0/1` 비교가 0건이다.
+
 ## 환경변수 (Vercel production)
 
 `DATABASE_URL`(Supabase Transaction pooler 6543), `MANAGER_PIN`, `PUBLIC_ORIGIN`,
@@ -136,11 +154,36 @@ khj873. 브라우저 프로필도 분리돼 있어 콘솔 작업 시 계정을 �
 환경변수 `AGENT_READ_TOKEN`(AI 매니저의 `ATTENDANCE_API_TOKEN` 과 동일값),
 `AGENT_STORE_SLUG`(현재 `k35321`). 자세한 내용은 [[perfect-ai-manager]] 저장소의 `CLAUDE.md`.
 
+## 근태 일괄 입력 API (2026-10-22 신설)
+
+`POST /api/:slug/attendance/bulk` — 관리자 인증(`requireManagerAuth`).
+
+과거 기록을 넣을 수단이 없었다. 생성은 실시간 `clock-in` 뿐, 수정은 단건 `PUT` 뿐이라
+**기존 고객 데이터 이관도, 테스트 시드도 만들 수 없었다.**
+
+```
+POST /api/k35321/attendance/bulk
+x-session-token: <관리자 세션>
+{ "records": [ { "employee_id": 6, "clock_in": "2026-10-20 09:00:00",
+                 "clock_out": "2026-10-20 18:00:00", "memo": null } ] }
+→ { "ok": true, "inserted": 25 }
+```
+
+- 시각은 공통 규칙대로 **KST 벽시계 문자열** `"YYYY-MM-DD HH:MM:SS"`
+- **전수 검증 후 전부 성공 아니면 전부 실패**(트랜잭션). 실패 시 어느 인덱스가 왜
+  틀렸는지 최대 20건까지 돌려준다
+- 요청한 사업장 소속 직원만 허용 — 타 사업장 `employee_id` 차단
+- **SMS 알림을 보내지 않는다.** 과거 기록을 넣는데 지금 알림이 가면 안 된다
+- 1회 최대 1,000건
+
+실측: 매장 `k35321` 에 2주치 25건을 한 번에 입력 성공.
+
 ## 남은 일
 
-- [ ] 실제 사용 후 Railway 서비스 정리 (지금은 플랫폼 장애로 전체 중지 상태)
-- [ ] 구 클라이언트 보안 비밀번호(`****qctx`) 사용 중지·삭제
+- [ ] Railway 서비스 정리 — 프로젝트 `unique-liberation`/서비스 "알바 계산기" + 볼륨이
+      아직 남아 있다(2026-10-22 기준 Railway 플랫폼 장애로 전체 중지). 구 운영 데이터
+      (매장 `xacyqf` 등)가 그 볼륨에 있으나 **복구하지 않기로 결정**했다.
+- [ ] 구 OAuth 클라이언트 보안 비밀번호(`****qctx`) 사용 중지·삭제
 - [ ] 커스텀 도메인 연결 시 `PUBLIC_ORIGIN` 갱신 + 리디렉션 URI 재등록
-- [ ] 과거 근태 기록을 직접 넣는 수단이 없다(생성은 clock-in 만, 수정은 PUT).
-      시드·이관이 필요하면 관리자용 일괄 입력 API 를 만들어야 한다.
-- [ ] 기존 SQLite 데이터(`data/alba.db`, 테스트 데이터) 이전 여부 결정 — 현재 미이전
+- [ ] 기존 SQLite 데이터(`data/alba.db`)는 이전하지 않았다. 필요해지면 위 일괄 입력
+      API 로 넣을 수 있다.
