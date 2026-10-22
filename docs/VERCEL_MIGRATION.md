@@ -108,18 +108,39 @@ khj873. 브라우저 프로필도 분리돼 있어 콘솔 작업 시 계정을 �
 - 보안 비밀번호가 2개 남아 있다(최초 발급분은 값을 모름 — 생성 직후 대화상자를
   닫으면 다시 볼 수 없다). 쓰이지 않는 구 버전은 정리 대상.
 
-#### 서버리스 주의 — OAuth state 가 인메모리다
+#### OAuth state — 인메모리였던 것을 DB 로 옮겼다 (2026-10-22)
 
-`oauth.ts` 의 `stateStore` 는 프로세스 메모리의 `Map` 이다. 서버리스에서는
-`/start` 와 `/callback` 이 **다른 람다 인스턴스로 갈 수 있고**, 그러면
-`잘못된 또는 만료된 요청` 으로 실패한다. 현재 트래픽에서는 인스턴스가 재사용돼
-동작하지만 구조적으로 불안정하다. 로그인 실패가 산발적으로 보고되면
-state 를 `sessions` 테이블 등 **공유 저장소로 옮길 것**.
+`oauth.ts` 의 `stateStore` 는 프로세스 메모리의 `Map` 이었다. 서버리스에서는
+`/start` 와 `/callback` 이 **다른 람다 인스턴스로 갈 수 있어** 그때마다
+`잘못된 또는 만료된 요청` 으로 로그인이 간헐 실패한다(인스턴스 재사용 덕에
+겉으로는 동작하고 있었다).
+
+신규가입 토큰과 같은 방식으로 `sessions` 테이블에 `__oauth__:` + JSON 으로
+저장하고 콜백에서 1회 소비한다(TTL 10분). `requireManagerAuth`·`requireAdminAuth`
+는 `session.slug` 가 대상 slug 와 **정확히 같아야** 통과하므로 `__oauth__:` 행이
+세션으로 오용될 수는 없다.
+
+실측 검증: 없는 state → `잘못된 또는 만료된 요청`, `/start` 가 발급한 state 를
+**별도 요청**으로 콜백에 넣으면 state 조회를 통과해 `토큰 검증 실패`(code 가 가짜라
+정상)까지 간다 = 요청 간에 state 가 공유된다.
+
+## 퍼펙트 AI 매니저 연동 (2026-10-22)
+
+`server/src/routes/agent.ts` — `/api/agent/{stores,employees,attendance}`.
+`x-agent-token` 인증, `AGENT_STORE_SLUG` 로 지정한 **한 매장만** 노출(PII 제외).
+
+⚠️ 이 라우트는 09-24 에 머지(PR #25)됐는데, **10-16 이전 작업을 그 커밋을 못 받은
+로컬 main 에서 해서 배포본에서 빠졌다**. 그 바람에 AI 매니저 채팅이 404 로 전부
+죽어 있었다(10-22 발견·복구). 포팅 시 `db` 직접 import + 모든 `.all()` 에 `await`.
+
+환경변수 `AGENT_READ_TOKEN`(AI 매니저의 `ATTENDANCE_API_TOKEN` 과 동일값),
+`AGENT_STORE_SLUG`(현재 `k35321`). 자세한 내용은 [[perfect-ai-manager]] 저장소의 `CLAUDE.md`.
 
 ## 남은 일
 
-- [ ] 실제 사용 후 Railway 서비스 정리 (지금은 병행 가동)
+- [ ] 실제 사용 후 Railway 서비스 정리 (지금은 플랫폼 장애로 전체 중지 상태)
 - [ ] 구 클라이언트 보안 비밀번호(`****qctx`) 사용 중지·삭제
-- [ ] OAuth `stateStore` 를 공유 저장소로 이전 (위 서버리스 주의 참고)
 - [ ] 커스텀 도메인 연결 시 `PUBLIC_ORIGIN` 갱신 + 리디렉션 URI 재등록
+- [ ] 과거 근태 기록을 직접 넣는 수단이 없다(생성은 clock-in 만, 수정은 PUT).
+      시드·이관이 필요하면 관리자용 일괄 입력 API 를 만들어야 한다.
 - [ ] 기존 SQLite 데이터(`data/alba.db`, 테스트 데이터) 이전 여부 결정 — 현재 미이전
