@@ -60,7 +60,7 @@ export default async function oauthRoutes(app: FastifyInstance) {
     // 매니저 흐름 — 정지된 사업장은 OAuth 자체 거부
     if (!isAdmin && slug) {
       const biz = await db.prepare('SELECT is_active FROM businesses WHERE slug = ?').get(slug) as any
-      if (biz && biz.is_active === 0) {
+      if (biz && biz.is_active === false) {
         return reply.code(403).send({ error: 'service_suspended', message: '서비스 이용이 일시 제한되었습니다.' })
       }
     }

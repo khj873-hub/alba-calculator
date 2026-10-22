@@ -107,10 +107,10 @@ export default async function adminRoutes(app: FastifyInstance) {
 
       // 자동 활성화 조건: 새 기한이 오늘 이후(>=) + 현재 정지 상태
       const todayYmd = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      const shouldAutoActivate = v !== null && v >= todayYmd && biz.is_active === 0
+      const shouldAutoActivate = v !== null && v >= todayYmd && biz.is_active === false
 
       if (shouldAutoActivate) {
-        await db.prepare('UPDATE businesses SET plan_expires_at = ?, is_active = 1, suspended_at = NULL WHERE slug = ?')
+        await db.prepare('UPDATE businesses SET plan_expires_at = ?, is_active = true, suspended_at = NULL WHERE slug = ?')
           .run(v, req.params.slug)
         return { ok: true, plan_expires_at: v, auto_activated: true }
       }
@@ -229,7 +229,7 @@ export default async function adminRoutes(app: FastifyInstance) {
         resolvedEmail = email
       }
 
-      await db.prepare('INSERT INTO businesses (slug, name, manager_pin, owner_user_id, time_off_enabled) VALUES (?, ?, ?, ?, 0)')
+      await db.prepare('INSERT INTO businesses (slug, name, manager_pin, owner_user_id, time_off_enabled) VALUES (?, ?, ?, ?, false)')
         .run(slug, name.trim(), hashedPin, ownerUserId)
 
       return { ok: true, slug, name: name.trim(), owner_email: resolvedEmail, owner_user_id: ownerUserId }

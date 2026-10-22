@@ -18,7 +18,7 @@ interface AdminStats {
 }
 
 interface AdminBizDetail {
-  business: { name: string; slug: string; plan: string; created_at: string; is_active: number; owner_email: string | null }
+  business: { name: string; slug: string; plan: string; created_at: string; is_active: boolean; owner_email: string | null }
   employees: { active: number; total: number; pay_enabled: number; working_now: number }
   attendance: { today: number; last7: number; last30: number; last_at: string | null; daily30: { d: string; n: number }[] }
   notifications: { sent30: number; byTemplate: { t: string; n: number }[] }
@@ -53,7 +53,7 @@ interface AdminBiz {
   name: string
   created_at: string
   time_off_enabled: number
-  is_active: number
+  is_active: boolean
   suspended_at: string | null
   plan: Plan
   plan_expires_at: string | null
@@ -337,7 +337,7 @@ export default function AdminPage() {
   }
 
   const handleToggleActive = async (b: AdminBiz) => {
-    const next = b.is_active === 1 ? 0 : 1
+    const next = b.is_active ? 0 : 1
     const action = next === 0 ? '정지' : '활성화'
     const msg = next === 0
       ? `'${b.name}' 사업장을 정지하시겠어요?\n사장님·직원이 모두 접근 불가합니다. 결제 정산 후 다시 활성화하세요.`
@@ -419,7 +419,7 @@ export default function AdminPage() {
                       <h3 className="text-lg font-extrabold text-gray-800">{detail.business.name}</h3>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {detail.business.plan} · 가입 {detail.business.created_at?.slice(0, 10)}
-                        {detail.business.is_active === 0 && <span className="text-red-500 ml-1">· 정지</span>}
+                        {!detail.business.is_active && <span className="text-red-500 ml-1">· 정지</span>}
                       </p>
                       {detail.business.owner_email && <p className="text-xs text-gray-400">{detail.business.owner_email}</p>}
                     </div>
@@ -735,18 +735,18 @@ export default function AdminPage() {
               </thead>
               <tbody>
                 {bizList.map(b => (
-                  <tr key={b.slug} className={`border-t border-gray-100 ${b.is_active === 0 ? 'bg-red-50' : ''}`}>
+                  <tr key={b.slug} className={`border-t border-gray-100 ${!b.is_active ? 'bg-red-50' : ''}`}>
                     <td className="px-4 py-3">
                       <button
                         onClick={() => handleToggleActive(b)}
                         className={`text-xs font-bold px-2 py-1 rounded-lg border transition ${
-                          b.is_active === 1
+                          b.is_active
                             ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
                             : 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200'
                         }`}
-                        title={b.is_active === 0 && b.suspended_at ? `정지: ${b.suspended_at}` : '클릭해서 상태 변경'}
+                        title={!b.is_active && b.suspended_at ? `정지: ${b.suspended_at}` : '클릭해서 상태 변경'}
                       >
-                        {b.is_active === 1 ? '🟢 활성' : '🔴 정지'}
+                        {b.is_active ? '🟢 활성' : '🔴 정지'}
                       </button>
                     </td>
                     <td className="px-4 py-3">

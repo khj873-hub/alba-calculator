@@ -47,7 +47,7 @@ export default async function businessesRoutes(app: FastifyInstance) {
       const slug = await generateSlug()
       const hashedPin = hashPin(manager_pin)
       // owner_user_id 연결 + time_off_enabled 명시적 OFF
-      await db.prepare('INSERT INTO businesses (slug, name, manager_pin, owner_user_id, time_off_enabled) VALUES (?, ?, ?, ?, 0)')
+      await db.prepare('INSERT INTO businesses (slug, name, manager_pin, owner_user_id, time_off_enabled) VALUES (?, ?, ?, ?, false)')
         .run(slug, name.trim(), hashedPin, ownerUserId)
       return { slug, name: name.trim() }
     }

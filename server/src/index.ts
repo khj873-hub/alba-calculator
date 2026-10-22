@@ -70,7 +70,9 @@ app.addHook('onRequest', async (req, reply) => {
       biz.plan = 'free'
       biz.plan_expires_at = null
     }
-    if (biz.is_active === 0) {
+    // Postgres 전환 후 is_active 는 boolean 이다. 예전 `=== 0` 비교는 항상 거짓이라
+    // 정지된 사업장이 그대로 열리는 구멍이 됐었다.
+    if (biz.is_active === false) {
       return reply.code(403).send({
         error: 'service_suspended',
         message: '서비스 이용이 일시 제한되었습니다. 운영자에게 문의해주세요. (khj873@jinusoft.com)',
