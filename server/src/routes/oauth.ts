@@ -18,20 +18,39 @@ export function isAdminEmail(email: string): boolean {
 }
 
 // OAuth state(=CSRF token) 임시 저장.
-type StateCtx = { slug?: string; admin?: boolean; signup?: boolean; createdAt: number }
-const stateStore = new Map<string, StateCtx>()
-function pruneStates() {
-  const now = Date.now()
-  for (const [k, v] of stateStore) {
-    if (now - v.createdAt > 10 * 60 * 1000) stateStore.delete(k) // 10분 만료
-  }
-}
+//
+// 프로세스 메모리(Map)에 두면 안 된다. 서버리스에서는 /start 와 /callback 이
+// **서로 다른 인스턴스**로 갈 수 있어, 그때마다 state 를 못 찾고 로그인이
+// "잘못된 또는 만료된 요청" 으로 실패한다. 그래서 sessions 테이블에 둔다
+// (신규가입 토큰이 `__signup__:` 를 쓰는 것과 같은 방식).
+type StateCtx = { slug?: string; admin?: boolean; signup?: boolean }
+const STATE_PREFIX = '__oauth__:'
+const STATE_TTL_MINUTES = 10
 
 function nowKST() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
 }
 function expiresKST(hours = 24) {
   return new Date(Date.now() + 9 * 60 * 60 * 1000 + hours * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19)
+}
+
+async function saveState(state: string, ctx: StateCtx): Promise<void> {
+  await db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowKST())
+  await db.prepare('INSERT INTO sessions (token, slug, expires_at) VALUES (?, ?, ?)')
+    .run(state, STATE_PREFIX + JSON.stringify(ctx), expiresKST(STATE_TTL_MINUTES / 60))
+}
+
+/** state 를 꺼내고 즉시 소비한다(1회용). 없거나 만료면 null. */
+async function takeState(state: string): Promise<StateCtx | null> {
+  const row = await db.prepare('SELECT slug FROM sessions WHERE token = ? AND expires_at > ?')
+    .get(state, nowKST()) as any
+  await db.prepare('DELETE FROM sessions WHERE token = ?').run(state)
+  if (!row || typeof row.slug !== 'string' || !row.slug.startsWith(STATE_PREFIX)) return null
+  try {
+    return JSON.parse(row.slug.slice(STATE_PREFIX.length)) as StateCtx
+  } catch {
+    return null
+  }
 }
 
 function oauthEnabled(): boolean {
@@ -65,9 +84,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
       }
     }
 
-    pruneStates()
     const state = randomBytes(16).toString('hex')
-    stateStore.set(state, { slug: (isAdmin || isSignup) ? undefined : slug, admin: isAdmin, signup: isSignup, createdAt: Date.now() })
+    await saveState(state, { slug: (isAdmin || isSignup) ? undefined : slug, admin: isAdmin, signup: isSignup })
 
     const redirectUri = `${PUBLIC_ORIGIN}/api/auth/google/callback`
     const params = new URLSearchParams({
@@ -91,10 +109,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
     if (error) return errRedirect(`구글 인증 실패: ${error}`)
     if (!code || !state) return errRedirect('필수 파라미터 누락')
 
-    pruneStates()
-    const ctx = stateStore.get(state)
+    const ctx = await takeState(state)
     if (!ctx) return errRedirect('잘못된 또는 만료된 요청 (10분 이내 재시도)')
-    stateStore.delete(state)
 
     if (!oauthEnabled()) return errRedirect('서버 OAuth 설정 미완')
 
