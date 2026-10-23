@@ -276,43 +276,48 @@ export default async function adminRoutes(app: FastifyInstance) {
     const cutoff7 = kst(-7 * 86400000)
     const cutoff30 = kst(-30 * 86400000)
     const one = async (sql: string, ...p: any[]) => (await db.prepare(sql).get(...p) as any)?.n ?? 0
+    const all = (sql: string, ...p: any[]) => db.prepare(sql).all(...p) as Promise<any[]>
 
-    // 사업장
-    const bizTotal = await one('SELECT COUNT(*) n FROM businesses')
-    const bizByPlan = await db.prepare('SELECT plan, COUNT(*) n FROM businesses GROUP BY plan').all() as any[]
-    const bizNew7 = await one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff7)
-    const bizNew30 = await one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff30)
-    const paidTotal = await one("SELECT COUNT(*) n FROM businesses WHERE plan != 'free'")
-
-    // 활성 사업장(최근 출퇴근 발생 기준)
-    const activeBiz7 = await one(
-      'SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff7)
-    const activeBiz30 = await one(
-      'SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff30)
-
-    // 직원
-    const empActive = await one("SELECT COUNT(*) n FROM employees WHERE status = 'active'")
-    const empTotal = await one('SELECT COUNT(*) n FROM employees')
-
-    // 출퇴근
-    const attToday = await one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', todayStart)
-    const att7 = await one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', cutoff7)
-    const attDaily = await db.prepare(
-      "SELECT substr(clock_in,1,10) d, COUNT(*) n FROM attendance WHERE clock_in >= ? GROUP BY d ORDER BY d").all(cutoff7) as any[]
-
-    // 로그인(활성 사용자)
-    const loginUsers7 = await one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff7)
-    const loginUsers30 = await one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff30)
-
-    // 알림 발송
-    const notifSent7 = await one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff7)
-    const notifSent30 = await one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff30)
-
-    // 문의
-    const inqTotal = await one('SELECT COUNT(*) n FROM inquiries')
-    const inqNew = await one("SELECT COUNT(*) n FROM inquiries WHERE status = 'new'")
-    const inqByType = await db.prepare(
-      "SELECT COALESCE(inquiry_type,'(미선택)') t, COUNT(*) n FROM inquiries GROUP BY t ORDER BY n DESC").all() as any[]
+    // ⚠️ 반드시 병렬로 돌릴 것. 예전에는 19개를 하나씩 await 했는데, DB 응답이 느린
+    // 시간대(쿼리당 1.5초쯤)에는 합이 30초를 넘어 **Vercel 함수가 타임아웃**났다.
+    // 그러면 JSON 이 아닌 응답이 나가 프런트는 원인 모를 "오류"만 띄웠다.
+    // 서로 의존하지 않는 집계들이라 Promise.all 로 묶으면 한 번에 파이프라인된다.
+    const [
+      bizTotal, bizByPlan, bizNew7, bizNew30, paidTotal,
+      activeBiz7, activeBiz30,
+      empActive, empTotal,
+      attToday, att7, attDaily,
+      loginUsers7, loginUsers30,
+      notifSent7, notifSent30,
+      inqTotal, inqNew, inqByType,
+    ] = await Promise.all([
+      // 사업장
+      one('SELECT COUNT(*) n FROM businesses'),
+      all('SELECT plan, COUNT(*) n FROM businesses GROUP BY plan'),
+      one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff7),
+      one('SELECT COUNT(*) n FROM businesses WHERE created_at >= ?', cutoff30),
+      one("SELECT COUNT(*) n FROM businesses WHERE plan != 'free'"),
+      // 활성 사업장(최근 출퇴근 발생 기준)
+      one('SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff7),
+      one('SELECT COUNT(DISTINCT e.business_id) n FROM attendance a JOIN employees e ON e.id = a.employee_id WHERE a.clock_in >= ?', cutoff30),
+      // 직원
+      one("SELECT COUNT(*) n FROM employees WHERE status = 'active'"),
+      one('SELECT COUNT(*) n FROM employees'),
+      // 출퇴근
+      one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', todayStart),
+      one('SELECT COUNT(*) n FROM attendance WHERE clock_in >= ?', cutoff7),
+      all("SELECT substr(clock_in,1,10) d, COUNT(*) n FROM attendance WHERE clock_in >= ? GROUP BY d ORDER BY d", cutoff7),
+      // 로그인(활성 사용자)
+      one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff7),
+      one('SELECT COUNT(*) n FROM users WHERE last_login_at >= ?', cutoff30),
+      // 알림 발송
+      one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff7),
+      one("SELECT COUNT(*) n FROM notification_logs WHERE status = 'sent' AND created_at >= ?", cutoff30),
+      // 문의
+      one('SELECT COUNT(*) n FROM inquiries'),
+      one("SELECT COUNT(*) n FROM inquiries WHERE status = 'new'"),
+      all("SELECT COALESCE(inquiry_type,'(미선택)') t, COUNT(*) n FROM inquiries GROUP BY t ORDER BY n DESC"),
+    ])
 
     return {
       generated_at: kst(),

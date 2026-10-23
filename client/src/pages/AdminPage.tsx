@@ -96,12 +96,18 @@ async function adminApi<T>(url: string, init?: RequestInit): Promise<T> {
   if (init?.body != null) headers['Content-Type'] = 'application/json'
   const res = await fetch(`/api${url}`, { ...init, headers })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: '오류' }))
+    // 응답이 JSON 이 아닐 수 있다(게이트웨이 타임아웃·플랫폼 오류 등). 그때 그냥 "오류"만
+    // 띄우면 원인을 알 수 없으므로, 어떤 요청이 몇 번으로 실패했는지까지 남긴다.
+    const err = await res.json().catch(() => null)
     if (res.status === 401) {
       clearStoredToken()
       throw new Error('운영자 인증 만료 — 다시 로그인해주세요')
     }
-    throw new Error(err.error || '오류')
+    if (err?.error) throw new Error(err.error)
+    const hint = res.status === 504 || res.status === 502
+      ? '서버 응답이 너무 오래 걸렸어요. 잠시 후 다시 시도해주세요'
+      : '서버 오류'
+    throw new Error(`${hint} (${res.status} ${url})`)
   }
   return res.json()
 }
