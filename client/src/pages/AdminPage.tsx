@@ -106,22 +106,30 @@ async function adminApi<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+// OAuth 콜백 처리: `/admin#token=xxx` 로 돌아오면 sessionStorage 에 저장하고 hash 를 지운다.
+// **첫 렌더 중 동기적으로** 실행되어야 아래 useState(!!getToken()) 초기값에 반영된다.
+// useEffect 로 하면 렌더 뒤에 돌기 때문에 authed 가 false 로 굳어 로그인 화면이 다시 뜨고,
+// 다시 로그인해야 들어가진다(= 구글 로그인을 2~3번 해야 했던 원인).
+// ManagerContext.absorbOAuthToken 과 같은 방식이다.
+function absorbOAuthToken(): boolean {
+  if (typeof window === 'undefined') return false
+  const hash = window.location.hash
+  if (!hash.startsWith('#token=')) return false
+  const token = hash.slice('#token='.length).split('&')[0]
+  if (!token) return false
+  setStoredToken(token)
+  history.replaceState(null, '', window.location.pathname + window.location.search)
+  return true
+}
+
 export default function AdminPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
-  // OAuth 콜백: #token=xxx 흡수
-  useEffect(() => {
-    if (window.location.hash.startsWith('#token=')) {
-      const t = window.location.hash.slice('#token='.length).split('&')[0]
-      if (t) {
-        setStoredToken(t)
-        history.replaceState(null, '', window.location.pathname + window.location.search)
-      }
-    }
-  }, [])
-
-  const [authed, setAuthed] = useState(!!getToken())
+  const [authed, setAuthed] = useState(() => {
+    absorbOAuthToken()
+    return !!getToken()
+  })
   const [oauthEnabled, setOauthEnabled] = useState(false)
   const [adminConfigured, setAdminConfigured] = useState(false)
   const [bizList, setBizList] = useState<AdminBiz[]>([])
